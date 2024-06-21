@@ -1,3 +1,4 @@
+from functools import cache
 import os
 from typing import Any, Dict, List, Optional
 
@@ -5,6 +6,7 @@ import cv2
 import imageio.v2 as imageio
 import numpy as np
 import torch
+import torch.nn.functional as F
 from pycolmap import SceneManager
 
 from .normalize import (
@@ -13,6 +15,8 @@ from .normalize import (
     transform_cameras,
     transform_points,
 )
+
+from segment_anything import SamPredictor, sam_model_registry
 
 
 def _get_rel_paths(path_dir: str) -> List[str]:
@@ -233,6 +237,8 @@ class Dataset:
         split: str = "train",
         patch_size: Optional[int] = None,
         load_depths: bool = False,
+        sam_model_type: Optional[str] = None,
+        sam_checkpoint: Optional[str] = None,
     ):
         self.parser = parser
         self.split = split
@@ -243,6 +249,15 @@ class Dataset:
             self.indices = indices[indices % self.parser.test_every != 0]
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
+
+        # Initialize SAM predictor
+        self.predictor = None  ### added
+        if sam_model_type and sam_checkpoint:
+            print("Loading SAM Model...")
+            sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint).to(
+                "cuda"
+            )
+            self.predictor = SamPredictor(sam)
 
     def __len__(self):
         return len(self.indices)
@@ -278,12 +293,38 @@ class Dataset:
             K[0, 2] -= x
             K[1, 2] -= y
 
-        data = {
-            "K": torch.from_numpy(K).float(),
-            "camtoworld": torch.from_numpy(camtoworlds).float(),
-            "image": torch.from_numpy(image).float(),
-            "image_id": item,  # the index of the image in the dataset
-        }
+        if self.predictor is not None:
+            self.predictor.set_image(image)
+            embeddings = self.predictor.get_image_embedding()
+            upsampled_embeddings = F.interpolate(
+                embeddings,
+                size=(image.shape[0], image.shape[1]),
+                mode="bilinear",
+                align_corners=False,
+            )  # [1, C, H, W]
+            unsampled_embeddings = upsampled_embeddings.squeeze(0).permute(
+                1, 2, 0
+            )  # [H, W, C]
+            image_tensor = torch.from_numpy(image).float().cuda()  # [H, W, 3]
+            concat_image = torch.cat((image_tensor, unsampled_embeddings), dim=2).cpu()
+
+            image = torch.from_numpy(image).float()
+            assert image.equal(concat_image[:, :, :3])
+
+            data = {
+                "K": torch.from_numpy(K).float(),
+                "camtoworld": torch.from_numpy(camtoworlds).float(),
+                "image": concat_image,  # [H, W, 3 + C]
+                "image_id": item,  # the index of the image in the dataset
+            }
+
+        else:
+            data = {
+                "K": torch.from_numpy(K).float(),
+                "camtoworld": torch.from_numpy(camtoworlds).float(),
+                "image": torch.from_numpy(image).float(),
+                "image_id": item,  # the index of the image in the dataset
+            }
 
         if self.load_depths:
             # projected points to image plane to get depths
@@ -323,18 +364,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/360_v2/garden")
     parser.add_argument("--factor", type=int, default=4)
+    parser.add_argument("--sam_checkpoint", type=str, default=None)
+    parser.add_argument("--sam_model_type", type=str, default="vit_h")
     args = parser.parse_args()
 
     # Parse COLMAP data.
     parser = Parser(
         data_dir=args.data_dir, factor=args.factor, normalize=True, test_every=8
     )
-    dataset = Dataset(parser, split="train", load_depths=True)
+    dataset = Dataset(
+        parser,
+        split="train",
+        load_depths=True,
+        sam_checkpoint=args.sam_checkpoint,
+        sam_model_type=args.sam_model_type,
+    )
     print(f"Dataset: {len(dataset)} images.")
 
     writer = imageio.get_writer("results/points.mp4", fps=30)
     for data in tqdm.tqdm(dataset, desc="Plotting points"):
-        image = data["image"].numpy().astype(np.uint8)
+        image = data["image"][:, :, :3].numpy().astype(np.uint8)
         points = data["points"].numpy()
         depths = data["depths"].numpy()
         for x, y in points:
