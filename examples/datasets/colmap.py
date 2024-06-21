@@ -248,6 +248,10 @@ class Dataset:
         return len(self.indices)
 
     def __getitem__(self, item: int) -> Dict[str, Any]:
+        return self.cache_get_item(item)
+
+    @cache
+    def cache_get_item(self, item: int) -> Dict[str, Any]:
         index = self.indices[item]
         image = imageio.imread(self.parser.image_paths[index])[..., :3]
         camera_id = self.parser.camera_ids[index]
