@@ -138,6 +138,10 @@ class Config:
     # Save training images to tensorboard
     tb_save_image: bool = False
 
+    # SAM checkpoint
+    sam_ckpt: Optional[str] = None
+    sam_type: str = "vit_h"
+
     def adjust_steps(self, factor: float):
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
         self.save_steps = [int(i * factor) for i in self.save_steps]
@@ -158,6 +162,7 @@ def create_splats_with_optimizers(
     sparse_grad: bool = False,
     batch_size: int = 1,
     feature_dim: Optional[int] = None,
+    sam_embedding_dim: Optional[int] = None,
     device: str = "cuda",
 ) -> Tuple[torch.nn.ParameterDict, torch.optim.Optimizer]:
     N = points.shape[0]
@@ -177,6 +182,14 @@ def create_splats_with_optimizers(
         ("opacities", torch.nn.Parameter(opacities), 5e-2),
     ]
 
+    # if sam_embedding_dim:
+    #     print(sam_embedding_dim)
+    #     features = torch.rand(N, sam_embedding_dim)
+    #     params.append(("features", torch.nn.Parameter(features), 2.5e-3))
+    #     colors = torch.logit(rgbs)
+    #     params.append(("colors", torch.nn.Parameter(colors), 2.5e-3))
+
+    # else:
     if feature_dim is None:
         # color is SH coefficients.
         colors = torch.zeros((N, (sh_degree + 1) ** 2, 3))  # [N, K, 3]
@@ -188,6 +201,7 @@ def create_splats_with_optimizers(
         features = torch.rand(N, feature_dim)  # [N, feature_dim]
         params.append(("features", torch.nn.Parameter(features), 2.5e-3))
         colors = torch.logit(rgbs)  # [N, 3]
+        colors = torch.cat((colors, features), dim=-1)  ### added
         params.append(("colors", torch.nn.Parameter(colors), 2.5e-3))
 
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
@@ -241,13 +255,17 @@ class Runner:
             split="train",
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
+            sam_checkpoint=cfg.sam_ckpt,
+            sam_model_type=cfg.sam_type,
         )
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
         # Model
-        feature_dim = 32 if cfg.app_opt else None
+        feature_dim = (
+            256 if cfg.app_opt else None
+        )  ### changed from 32 to 256 to accomate SAM
         self.splats, self.optimizers = create_splats_with_optimizers(
             torch.from_numpy(self.parser.points).float(),
             torch.from_numpy(self.parser.points_rgb / 255.0).float(),
@@ -258,7 +276,11 @@ class Runner:
             batch_size=cfg.batch_size,
             feature_dim=feature_dim,
             device=self.device,
+            sam_embedding_dim=(
+                self.trainset[0]["image"].shape[-1] - 3 if cfg.sam_ckpt else None
+            ),
         )
+        print(self.splats)
         print("Model initialized. Number of GS:", len(self.splats["means3d"]))
 
         self.pose_optimizers = []
@@ -354,7 +376,7 @@ class Runner:
             quats=quats,
             scales=scales,
             opacities=opacities,
-            colors=colors,
+            colors=colors.squeeze(0),
             viewmats=torch.linalg.inv(camtoworlds),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
@@ -392,15 +414,20 @@ class Runner:
                 )
             )
 
-        trainloader = torch.utils.data.DataLoader(
-            self.trainset,
-            batch_size=cfg.batch_size,
-            shuffle=True,
-            num_workers=4,
-            persistent_workers=True,
-            pin_memory=True,
-        )
-        trainloader_iter = iter(trainloader)
+        ### TODO: Trainloader not working, using temporary solution
+
+        # trainloader = torch.utils.data.DataLoader(
+        #     self.trainset,
+        #     batch_size=cfg.batch_size,
+        #     shuffle=True,
+        #     num_workers=4,
+        #     persistent_workers=True,
+        #     pin_memory=True,
+        # )
+        # trainloader_iter = iter(trainloader)
+
+        indices = torch.randperm(len(self.trainset))
+        current_index = 0
 
         # Training loop.
         global_tic = time.time()
@@ -412,22 +439,35 @@ class Runner:
                 self.viewer.lock.acquire()
                 tic = time.time()
 
-            try:
-                data = next(trainloader_iter)
-            except StopIteration:
-                trainloader_iter = iter(trainloader)
-                data = next(trainloader_iter)
+            # try:
+            #     data = next(trainloader_iter)
+            # except StopIteration:
+            #     trainloader_iter = iter(trainloader)
+            #     data = next(trainloader_iter)
 
-            camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)  # [1, 4, 4]
-            Ks = data["K"].to(device)  # [1, 3, 3]
-            pixels = data["image"].to(device) / 255.0  # [1, H, W, 3]
+            if current_index >= len(
+                self.trainset
+            ):  # Check if all indices have been used
+                indices = torch.randperm(len(self.trainset))  # Reshuffle the indices
+                current_index = 0  # Reset index counter
+
+            data = self.trainset[indices[current_index]]
+            current_index += 1
+
+            ### NOTE: added .unsqueeze(0) for all data tensors if not using DataLoader
+            camtoworlds = camtoworlds_gt = (
+                data["camtoworld"].to(device).unsqueeze(0)
+            )  # [1, 4, 4]
+            Ks = data["K"].to(device).unsqueeze(0)  # [1, 3, 3]
+            pixels = data["image"].to(device).unsqueeze(0) / 255.0  # [1, H, W, 3]
+
             num_train_rays_per_step = (
                 pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
-            image_ids = data["image_id"].to(device)
+            image_ids = data["image_id"].to(device).unsqueeze(0)
             if cfg.depth_loss:
-                points = data["points"].to(device)  # [1, M, 2]
-                depths_gt = data["depths"].to(device)  # [1, M]
+                points = data["points"].to(device).unsqueeze(0)  # [1, M, 2]
+                depths_gt = data["depths"].to(device).unsqueeze(0)  # [1, M]
 
             height, width = pixels.shape[1:3]
 

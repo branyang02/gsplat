@@ -27,7 +27,7 @@ def test_rasterization(
 
     torch.manual_seed(42)
 
-    C, N = 2, 10_000
+    C, N = 256, 10_000
     means = torch.rand(N, 3, device=device)
     quats = torch.randn(N, 4, device=device)
     scales = torch.rand(N, 3, device=device)

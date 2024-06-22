@@ -109,6 +109,7 @@ class AppearanceOptModule(torch.nn.Module):
         else:
             h = torch.cat([features, sh_bases], dim=-1)
         colors = self.color_head(h)
+        colors = torch.cat((colors, features), dim=-1) ### added
         return colors
 
 

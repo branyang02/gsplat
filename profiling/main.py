@@ -116,6 +116,7 @@ def main(
     mem_toc_fwd = torch.cuda.max_memory_allocated() / 1024**3 - mem_tic
 
     render_colors = outputs[0]
+    print("Rendered Colors:", render_colors.shape)
     loss = render_colors.sum()
 
     def backward():

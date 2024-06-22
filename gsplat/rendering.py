@@ -188,6 +188,20 @@ def rasterization(
         'flatten_ids', 'isect_offsets', 'width', 'height', 'tile_size'])
 
     """
+    # colors shape torch.Size([111785, 32])
+
+    # print("means", means.shape)
+    # print("quats", quats.shape)
+    # print("scales", scales.shape)
+    # print("opacities", opacities.shape)
+    # print("colors", colors.shape)
+    # print("viewmats", viewmats.shape)
+    # print("Ks", Ks.shape)
+    # print("width", width)
+    # print("height", height)
+    # print("sh_degree", sh_degree)
+    # print("render_mode", render_mode)
+    # print("--------------------")
 
     N = means.shape[0]
     C = viewmats.shape[0]
