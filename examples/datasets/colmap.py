@@ -252,12 +252,14 @@ class Dataset:
         split: str = "train",
         patch_size: Optional[int] = None,
         load_depths: bool = False,
+        embed_dim: Optional[int] = None,  ##### added embedding dimension
     ):
         self.parser = parser
         self.split = split
         self.patch_size = patch_size
         self.load_depths = load_depths
         indices = np.arange(len(self.parser.image_names))
+        self.embed_dim = embed_dim  ##### added embedding dimension
         if split == "train":
             self.indices = indices[indices % self.parser.test_every != 0]
         else:
@@ -293,12 +295,31 @@ class Dataset:
             K[0, 2] -= x
             K[1, 2] -= y
 
-        data = {
-            "K": torch.from_numpy(K).float(),
-            "camtoworld": torch.from_numpy(camtoworlds).float(),
-            "image": torch.from_numpy(image).float(),
-            "image_id": item,  # the index of the image in the dataset
-        }
+        if self.embed_dim is not None:
+            ##### TODO: Temp. random embeddings.
+            # np.random.seed(index)
+            # h, w = image.shape[:2]
+            # embedding = np.random.randn(h, w, 256)
+            # image = np.concatenate((image, embedding), axis=2)
+            torch.manual_seed(index)
+            h, w = image.shape[:2]
+            embedding = torch.randn(h, w, self.embed_dim)
+            image = torch.from_numpy(image).float()
+            image = torch.cat((image, embedding), dim=2)
+
+            data = {
+                "K": torch.from_numpy(K).float(),
+                "camtoworld": torch.from_numpy(camtoworlds).float(),
+                "image": image,
+                "image_id": item,  # the index of the image in the dataset
+            }
+        else:
+            data = {
+                "K": torch.from_numpy(K).float(),
+                "camtoworld": torch.from_numpy(camtoworlds).float(),
+                "image": torch.from_numpy(image).float(),
+                "image_id": item,  # the index of the image in the dataset
+            }
 
         if self.load_depths:
             # projected points to image plane to get depths
