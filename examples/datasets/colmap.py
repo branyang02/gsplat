@@ -237,6 +237,11 @@ class DynamicDataset:
     def __getitem__(self, item: int) -> Dict[str, Any]:
         return torch.load(os.path.join(self.data_dir, f"{item}.pt"))
 
+    @property
+    def feature_dim(self) -> int:
+        data = torch.load(os.path.join(self.data_dir, f"{0}.pt"))
+        return data["image"].shape[-1] - 3  ##### exclude RGB channels
+
 
 class Dataset:
     """A simple dataset class."""
