@@ -15,14 +15,15 @@ class Config:
     test_every: int = 8
     patch_size: Optional[int] = None
     depth_loss: bool = False
+    embed_dim: int = 128
 
 
 class PreProcessor:
     def __init__(self, cfg: Config):
 
-        train_dir = f"{cfg.data_dir}/trainset"
+        train_dir = os.path.join(cfg.data_dir, "trainset")
         os.makedirs(train_dir, exist_ok=True)
-        val_dir = f"{cfg.data_dir}/valset"
+        val_dir = os.path.join(cfg.data_dir, "valset")
         os.makedirs(val_dir, exist_ok=True)
 
         self.parser = Parser(
@@ -36,6 +37,7 @@ class PreProcessor:
             split="train",
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
+            embed_dim=cfg.embed_dim,
         )
         self.valset = Dataset(self.parser, split="val")
 
