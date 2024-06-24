@@ -476,6 +476,7 @@ class Runner:
             info["means2d"].retain_grad()  # used for running stats
 
             # loss
+            ##### TODO: verify the correctness of the loss function for language_features.
             l1loss_colors = F.l1_loss(colors, pixels)  ##### changed variable name
             l1loss_features = (
                 F.l1_loss(features, language_features) if cfg.app_opt else 0.0
