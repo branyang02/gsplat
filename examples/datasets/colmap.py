@@ -224,6 +224,20 @@ class Parser:
         self.scene_scale = np.max(dists)
 
 
+class DynamicDataset:
+    """Load data from disk instead of memory"""
+
+    def __init__(self, data_dir: str):
+        self.data_dir = data_dir
+        self.num_entries = len(os.listdir(data_dir))
+
+    def __len__(self):
+        return self.num_entries
+
+    def __getitem__(self, item: int) -> Dict[str, Any]:
+        return torch.load(os.path.join(self.data_dir, f"{item}.pt"))
+
+
 class Dataset:
     """A simple dataset class."""
 
