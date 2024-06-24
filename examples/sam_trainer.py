@@ -245,8 +245,10 @@ class Runner:
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
+        ##### changed: get feature_dim from trainset
+        feature_dim = self.trainset.feature_dim if cfg.app_opt else None
+
         # Model
-        feature_dim = 32 if cfg.app_opt else None
         self.splats, self.optimizers = create_splats_with_optimizers(
             torch.from_numpy(self.parser.points).float(),
             torch.from_numpy(self.parser.points_rgb / 255.0).float(),
