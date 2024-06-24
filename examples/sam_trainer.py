@@ -13,7 +13,7 @@ import tqdm
 import tyro
 import viser
 import nerfview
-from datasets.colmap import Dataset, Parser
+from datasets.colmap import Dataset, Parser, DynamicDataset
 from datasets.traj import generate_interpolated_path
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
@@ -236,13 +236,12 @@ class Runner:
             normalize=True,
             test_every=cfg.test_every,
         )
-        self.trainset = Dataset(
-            self.parser,
-            split="train",
-            patch_size=cfg.patch_size,
-            load_depths=cfg.depth_loss,
-        )
-        self.valset = Dataset(self.parser, split="val")
+        self.trainset = DynamicDataset(
+            os.path.join(cfg.data_dir, "trainset")
+        )  ##### changed
+        self.valset = DynamicDataset(
+            os.path.join(cfg.data_dir, "valset")
+        )  ##### changed
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
