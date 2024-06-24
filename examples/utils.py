@@ -45,7 +45,7 @@ class CameraOptModule(torch.nn.Module):
         transform[..., :3, 3] = dx
         return torch.matmul(camtoworlds, transform)
 
-
+##### TODO: Change the name of this class
 class AppearanceOptModule(torch.nn.Module):
     """Appearance optimization module."""
 
