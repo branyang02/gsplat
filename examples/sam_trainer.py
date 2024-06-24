@@ -246,7 +246,8 @@ class Runner:
         print("Scene scale:", self.scene_scale)
 
         ##### changed: get feature_dim from trainset
-        feature_dim = self.trainset.feature_dim if cfg.app_opt else None
+        self.feature_dim = self.trainset.feature_dim if cfg.app_opt else None
+        print("Feature dim:", self.feature_dim)
 
         # Model
         self.splats, self.optimizers = create_splats_with_optimizers(
@@ -257,7 +258,7 @@ class Runner:
             init_opacity=cfg.init_opa,
             sparse_grad=cfg.sparse_grad,
             batch_size=cfg.batch_size,
-            feature_dim=feature_dim,
+            feature_dim=self.feature_dim,
             device=self.device,
         )
         print("Model initialized. Number of GS:", len(self.splats["means3d"]))
@@ -281,7 +282,11 @@ class Runner:
         self.app_optimizers = []
         if cfg.app_opt:
             self.app_module = AppearanceOptModule(
-                len(self.trainset), feature_dim, cfg.app_embed_dim, cfg.sh_degree
+                len(self.trainset),
+                self.feature_dim,
+                cfg.app_embed_dim,
+                cfg.sh_degree,
+                output_dim=self.feature_dim + 3,
             ).to(self.device)
             # initialize the last layer to be zero so that the initial output is zero.
             torch.nn.init.zeros_(self.app_module.color_head[-1].weight)
@@ -344,8 +349,8 @@ class Runner:
                 dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
                 sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
             )
-            colors = colors + self.splats["colors"]
-            colors = torch.sigmoid(colors)
+            # colors = colors + self.splats["colors"]
+            # colors = torch.sigmoid(colors)
         else:
             colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
 
@@ -424,7 +429,8 @@ class Runner:
 
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)  # [1, 4, 4]
             Ks = data["K"].to(device)  # [1, 3, 3]
-            pixels = data["image"].to(device) / 255.0  # [1, H, W, 3]
+            pixels = data["image"][..., :3].to(device) / 255.0  # [1, H, W, 3]
+            language_features = data["image"][..., 3:].to(device)
             num_train_rays_per_step = (
                 pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
@@ -458,6 +464,8 @@ class Runner:
             )
             if renders.shape[-1] == 4:
                 colors, depths = renders[..., 0:3], renders[..., 3:4]
+            elif renders.shape[-1] == 3 + self.feature_dim:
+                colors, features = renders[..., :3], renders[..., 3:]
             else:
                 colors, depths = renders, None
 
@@ -468,11 +476,18 @@ class Runner:
             info["means2d"].retain_grad()  # used for running stats
 
             # loss
-            l1loss = F.l1_loss(colors, pixels)
+            l1loss_colors = F.l1_loss(colors, pixels)  ##### changed variable name
+            l1loss_features = (
+                F.l1_loss(features, language_features) if cfg.app_opt else 0.0
+            )  ##### added l1loss_features
             ssimloss = 1.0 - self.ssim(
                 pixels.permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
             )
-            loss = l1loss * (1.0 - cfg.ssim_lambda) + ssimloss * cfg.ssim_lambda
+            loss = (
+                l1loss_colors * (1.0 - cfg.ssim_lambda)
+                + ssimloss * cfg.ssim_lambda
+                + l1loss_features * 0.1
+            )  ##### added l1loss_features
             if cfg.depth_loss:
                 # query depths from depth map
                 points = torch.stack(
@@ -507,7 +522,12 @@ class Runner:
             if cfg.tb_every > 0 and step % cfg.tb_every == 0:
                 mem = torch.cuda.max_memory_allocated() / 1024**3
                 self.writer.add_scalar("train/loss", loss.item(), step)
-                self.writer.add_scalar("train/l1loss", l1loss.item(), step)
+                self.writer.add_scalar(
+                    "train/l1loss_colors", l1loss_colors.item(), step
+                )  ##### changed variable name
+                self.writer.add_scalar(
+                    "train/l1loss_features", l1loss_features.item(), step
+                )  ##### added l1loss_features
                 self.writer.add_scalar("train/ssimloss", ssimloss.item(), step)
                 self.writer.add_scalar(
                     "train/num_GS", len(self.splats["means3d"]), step
@@ -809,7 +829,8 @@ class Runner:
         for i, data in enumerate(valloader):
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
-            pixels = data["image"].to(device) / 255.0
+            pixels = data["image"][..., :3].to(device) / 255.0
+            language_features = data["image"][..., 3:].to(device)
             height, width = pixels.shape[1:3]
 
             torch.cuda.synchronize()

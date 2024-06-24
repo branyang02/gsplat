@@ -57,6 +57,7 @@ class AppearanceOptModule(torch.nn.Module):
         sh_degree: int = 3,
         mlp_width: int = 64,
         mlp_depth: int = 2,
+        output_dim: int = 3,  ##### added output_dim
     ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -70,7 +71,9 @@ class AppearanceOptModule(torch.nn.Module):
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
             layers.append(torch.nn.ReLU(inplace=True))
-        layers.append(torch.nn.Linear(mlp_width, 3))
+        layers.append(
+            torch.nn.Linear(mlp_width, output_dim)
+        )  ##### changed from 3 to output_dim
         self.color_head = torch.nn.Sequential(*layers)
 
     def forward(
