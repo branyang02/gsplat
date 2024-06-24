@@ -70,7 +70,7 @@ class AppearanceOptModule(torch.nn.Module):
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
             layers.append(torch.nn.ReLU(inplace=True))
-        layers.append(torch.nn.Linear(mlp_width, 3))
+        layers.append(torch.nn.Linear(mlp_width, 259))
         self.color_head = torch.nn.Sequential(*layers)
 
     def forward(

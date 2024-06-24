@@ -224,6 +224,20 @@ class Parser:
         self.scene_scale = np.max(dists)
 
 
+class DynamicDataset:
+    """Load data from disk instead of memory"""
+
+    def __init__(self, data_dir: str):
+        self.data_dir = data_dir
+        self.num_entries = len(os.listdir(data_dir))
+
+    def __len__(self):
+        return self.num_entries
+
+    def __getitem__(self, item: int) -> Dict[str, Any]:
+        return torch.load(os.path.join(self.data_dir, f"{item}.pt"))
+
+
 class Dataset:
     """A simple dataset class."""
 
@@ -274,10 +288,21 @@ class Dataset:
             K[0, 2] -= x
             K[1, 2] -= y
 
+        # # TODO: Temp. random embeddings.
+        # np.random.seed(index)
+        # h, w = image.shape[:2]
+        # embedding = np.random.randn(h, w, 256)
+        # image = np.concatenate((image, embedding), axis=2)
+        torch.manual_seed(index)
+        h, w = image.shape[:2]
+        embedding = torch.randn(h, w, 256)
+        image = torch.from_numpy(image).float()
+        image = torch.cat((image, embedding), dim=2)
+
         data = {
             "K": torch.from_numpy(K).float(),
             "camtoworld": torch.from_numpy(camtoworlds).float(),
-            "image": torch.from_numpy(image).float(),
+            "image": image,
             "image_id": item,  # the index of the image in the dataset
         }
 

@@ -13,7 +13,7 @@ import tqdm
 import tyro
 import viser
 import nerfview
-from datasets.colmap import Dataset, Parser
+from datasets.colmap import Dataset, Parser, DynamicDataset
 from datasets.traj import generate_interpolated_path
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
@@ -187,7 +187,8 @@ def create_splats_with_optimizers(
         # features will be used for appearance and view-dependent shading
         features = torch.rand(N, feature_dim)  # [N, feature_dim]
         params.append(("features", torch.nn.Parameter(features), 2.5e-3))
-        colors = torch.logit(rgbs)  # [N, 3]
+        # colors = torch.logit(rgbs)  # [N, 3]
+        colors = torch.zeros((N, 259))  # [N, 259]
         params.append(("colors", torch.nn.Parameter(colors), 2.5e-3))
 
     splats = torch.nn.ParameterDict({n: v for n, v, _ in params}).to(device)
@@ -236,13 +237,15 @@ class Runner:
             normalize=True,
             test_every=cfg.test_every,
         )
-        self.trainset = Dataset(
-            self.parser,
-            split="train",
-            patch_size=cfg.patch_size,
-            load_depths=cfg.depth_loss,
-        )
-        self.valset = Dataset(self.parser, split="val")
+        self.trainset = DynamicDataset(os.path.join(cfg.data_dir, "trainset"))
+        # self.trainset = Dataset(
+        #     self.parser,
+        #     split="train",
+        #     patch_size=cfg.patch_size,
+        #     load_depths=cfg.depth_loss,
+        # )
+        self.trainset = DynamicDataset(os.path.join(cfg.data_dir, "valset"))
+        # self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
@@ -396,7 +399,7 @@ class Runner:
             self.trainset,
             batch_size=cfg.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=1,
             persistent_workers=True,
             pin_memory=True,
         )
@@ -417,6 +420,9 @@ class Runner:
             except StopIteration:
                 trainloader_iter = iter(trainloader)
                 data = next(trainloader_iter)
+
+            for key in data:
+                data[key] = data[key].squeeze(0)
 
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)  # [1, 4, 4]
             Ks = data["K"].to(device)  # [1, 3, 3]
@@ -456,6 +462,8 @@ class Runner:
                 colors, depths = renders[..., 0:3], renders[..., 3:4]
             else:
                 colors, depths = renders, None
+
+            print(colors.shape, pixels.shape)
 
             if cfg.random_bkgd:
                 bkgd = torch.rand(1, 3, device=device)
@@ -932,6 +940,8 @@ class Runner:
             sh_degree=self.cfg.sh_degree,  # active all SH degrees
             radius_clip=3.0,  # skip GSs that have small image radius (in pixels)
         )  # [1, H, W, 3]
+        render_colors = render_colors[:, :, :, :3]
+        print(render_colors.shape)
         return render_colors[0].cpu().numpy()
 
 
