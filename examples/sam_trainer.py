@@ -138,6 +138,9 @@ class Config:
     # Save training images to tensorboard
     tb_save_image: bool = False
 
+    # Language features lambda
+    language_features_lambda: float = 0.2
+
     def adjust_steps(self, factor: float):
         self.eval_steps = [int(i * factor) for i in self.eval_steps]
         self.save_steps = [int(i * factor) for i in self.save_steps]
@@ -488,7 +491,7 @@ class Runner:
             loss = (
                 l1loss_colors * (1.0 - cfg.ssim_lambda)
                 + ssimloss * cfg.ssim_lambda
-                + l1loss_features * 0.1
+                + l1loss_features * cfg.language_features_lambda
             )  ##### added l1loss_features
             if cfg.depth_loss:
                 # query depths from depth map
