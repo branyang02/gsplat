@@ -14,6 +14,7 @@ from .normalize import (
     transform_points,
 )
 
+from .feature_processor import FeatureProcessor
 
 def _get_rel_paths(path_dir: str) -> List[str]:
     """Recursively get relative paths of files in a directory."""
@@ -253,6 +254,7 @@ class Dataset:
         patch_size: Optional[int] = None,
         load_depths: bool = False,
         embed_dim: Optional[int] = None,  ##### added embedding dimension
+        **kwargs,
     ):
         self.parser = parser
         self.split = split
@@ -264,6 +266,11 @@ class Dataset:
             self.indices = indices[indices % self.parser.test_every != 0]
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
+
+        if self.embed_dim is not None:
+            self.processor = FeatureProcessor(
+                sam_ckpt=kwargs["sam_ckpt"], embed_dim=self.embed_dim
+            )
 
     def __len__(self):
         return len(self.indices)
@@ -296,27 +303,15 @@ class Dataset:
             K[1, 2] -= y
 
         if self.embed_dim is not None:
-            # ##### TODO: Temp. random embeddings.
-            # # np.random.seed(index)
-            # # h, w = image.shape[:2]
-            # # embedding = np.random.randn(h, w, 256)
-            # # image = np.concatenate((image, embedding), axis=2)
-            # torch.manual_seed(index)
-            # h, w = image.shape[:2]
-            # embedding = torch.randn(h, w, self.embed_dim)
-            # image = torch.from_numpy(image).float()
-            # image = torch.cat((image, embedding), dim=2)
+            data = self.processor.process(image)
 
-            # data = {
-            #     "K": torch.from_numpy(K).float(),
-            #     "camtoworld": torch.from_numpy(camtoworlds).float(),
-            #     "image": image,
-            #     "image_id": item,  # the index of the image in the dataset
-            # }
-
-            
-
-
+            # TODO: placeholder
+            data = {
+                "K": torch.from_numpy(K).float(),
+                "camtoworld": torch.from_numpy(camtoworlds).float(),
+                "image": torch.from_numpy(image).float(),
+                "image_id": item,  # the index of the image in the dataset
+            }
         else:
             data = {
                 "K": torch.from_numpy(K).float(),
@@ -369,15 +364,17 @@ if __name__ == "__main__":
     parser = Parser(
         data_dir=args.data_dir, factor=args.factor, normalize=True, test_every=8
     )
-    dataset = Dataset(parser, split="train", load_depths=True)
+    dataset = Dataset(
+        parser,
+        split="val",
+        load_depths=True,
+        embed_dim=128,
+        sam_model="vit_h",
+        sam_ckpt="ckpts/sam_vit_h_4b8939.pth",
+    )
     print(f"Dataset: {len(dataset)} images.")
 
-    writer = imageio.get_writer("results/points.mp4", fps=30)
     for data in tqdm.tqdm(dataset, desc="Plotting points"):
         image = data["image"].numpy().astype(np.uint8)
         points = data["points"].numpy()
         depths = data["depths"].numpy()
-        for x, y in points:
-            cv2.circle(image, (int(x), int(y)), 2, (255, 0, 0), -1)
-        writer.append_data(image)
-    writer.close()

@@ -16,3 +16,4 @@ opencv-python
 tyro
 Pillow
 tensorboard
+open-clip-torch==2.24.0
