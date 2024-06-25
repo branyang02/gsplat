@@ -309,6 +309,7 @@ class Runner:
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(
             self.device
         )
+        self.cosine = torch.nn.CosineSimilarity(dim=-1).to(self.device) ##### added cosine similarity to evalute feature difference
 
         # Viewer
         if not self.cfg.disable_viewer:
@@ -826,8 +827,11 @@ class Runner:
             self.valset, batch_size=1, shuffle=False, num_workers=1
         )
         ellipse_time = 0
-        metrics = {"psnr": [], "ssim": [], "lpips": []}
+        metrics = {"psnr": [], "ssim": [], "lpips": [], "cosine": []} ##### added cosine similarity
         for i, data in enumerate(valloader):
+            for key in data:
+                data[key] = data[key].squeeze(0)  ##### add 1 extra dimension
+
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
             pixels = data["image"][..., :3].to(device) / 255.0
@@ -836,7 +840,7 @@ class Runner:
 
             torch.cuda.synchronize()
             tic = time.time()
-            colors, _, _ = self.rasterize_splats(
+            renders, _, _ = self.rasterize_splats(
                 camtoworlds=camtoworlds,
                 Ks=Ks,
                 width=width,
@@ -845,6 +849,12 @@ class Runner:
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
             )  # [1, H, W, 3]
+            if (
+                renders.shape[-1] == 3 + self.feature_dim
+            ):  ##### evaluate featues as well
+                colors, features = renders[..., :3], renders[..., 3:]
+            else:
+                colors = renders
             colors = torch.clamp(colors, 0.0, 1.0)
             torch.cuda.synchronize()
             ellipse_time += time.time() - tic
@@ -860,15 +870,17 @@ class Runner:
             metrics["psnr"].append(self.psnr(colors, pixels))
             metrics["ssim"].append(self.ssim(colors, pixels))
             metrics["lpips"].append(self.lpips(colors, pixels))
+            metrics["cosine"].append(self.cosine(features, language_features)) ##### added cosine similarity
 
         ellipse_time /= len(valloader)
 
         psnr = torch.stack(metrics["psnr"]).mean()
         ssim = torch.stack(metrics["ssim"]).mean()
         lpips = torch.stack(metrics["lpips"]).mean()
+        cosine = torch.stack(metrics["cosine"]).mean() ##### added cosine similarity
         print(
-            f"PSNR: {psnr.item():.3f}, SSIM: {ssim.item():.4f}, LPIPS: {lpips.item():.3f} "
-            f"Time: {ellipse_time:.3f}s/image "
+            f"PSNR: {psnr.item():.3f}, SSIM: {ssim.item():.4f}, LPIPS: {lpips.item():.3f}, Cosine: {cosine.item():.3f}\n"
+            f"Time: {ellipse_time:.3f}s/image \n"
             f"Number of GS: {len(self.splats['means3d'])}"
         )
         # save stats as json
@@ -876,6 +888,7 @@ class Runner:
             "psnr": psnr.item(),
             "ssim": ssim.item(),
             "lpips": lpips.item(),
+            "cosine": cosine.item(), ##### added cosine similarity
             "ellipse_time": ellipse_time,
             "num_GS": len(self.splats["means3d"]),
         }
