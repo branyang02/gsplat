@@ -296,23 +296,27 @@ class Dataset:
             K[1, 2] -= y
 
         if self.embed_dim is not None:
-            ##### TODO: Temp. random embeddings.
-            # np.random.seed(index)
+            # ##### TODO: Temp. random embeddings.
+            # # np.random.seed(index)
+            # # h, w = image.shape[:2]
+            # # embedding = np.random.randn(h, w, 256)
+            # # image = np.concatenate((image, embedding), axis=2)
+            # torch.manual_seed(index)
             # h, w = image.shape[:2]
-            # embedding = np.random.randn(h, w, 256)
-            # image = np.concatenate((image, embedding), axis=2)
-            torch.manual_seed(index)
-            h, w = image.shape[:2]
-            embedding = torch.randn(h, w, self.embed_dim)
-            image = torch.from_numpy(image).float()
-            image = torch.cat((image, embedding), dim=2)
+            # embedding = torch.randn(h, w, self.embed_dim)
+            # image = torch.from_numpy(image).float()
+            # image = torch.cat((image, embedding), dim=2)
 
-            data = {
-                "K": torch.from_numpy(K).float(),
-                "camtoworld": torch.from_numpy(camtoworlds).float(),
-                "image": image,
-                "image_id": item,  # the index of the image in the dataset
-            }
+            # data = {
+            #     "K": torch.from_numpy(K).float(),
+            #     "camtoworld": torch.from_numpy(camtoworlds).float(),
+            #     "image": image,
+            #     "image_id": item,  # the index of the image in the dataset
+            # }
+
+            
+
+
         else:
             data = {
                 "K": torch.from_numpy(K).float(),
