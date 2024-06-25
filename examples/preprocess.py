@@ -39,7 +39,11 @@ class PreProcessor:
             load_depths=cfg.depth_loss,
             embed_dim=cfg.embed_dim,
         )
-        self.valset = Dataset(self.parser, split="val")
+        self.valset = Dataset(
+            self.parser,
+            split="val",
+            embed_dim=cfg.embed_dim,
+        )
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
