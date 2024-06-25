@@ -16,6 +16,8 @@ class Config:
     patch_size: Optional[int] = None
     depth_loss: bool = False
     embed_dim: int = 128
+    sam_model: str = "vit_h"
+    sam_ckpt: str = "ckpts/sam_vit_h_4b8939.pth"
 
 
 class PreProcessor:
@@ -38,11 +40,15 @@ class PreProcessor:
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
             embed_dim=cfg.embed_dim,
+            sam_model=cfg.sam_model,
+            sam_ckpt=cfg.sam_ckpt,
         )
         self.valset = Dataset(
             self.parser,
             split="val",
             embed_dim=cfg.embed_dim,
+            sam_model=cfg.sam_model,
+            sam_ckpt=cfg.sam_ckpt,
         )
 
         trainloader = torch.utils.data.DataLoader(
