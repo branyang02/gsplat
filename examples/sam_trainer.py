@@ -120,7 +120,7 @@ class Config:
     pose_noise: float = 0.0
 
     # Enable appearance optimization. (experimental)
-    app_opt: bool = False
+    app_opt: bool = True
     # Appearance embedding dimension
     app_embed_dim: int = 16
     # Learning rate for appearance optimization
