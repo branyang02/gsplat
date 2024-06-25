@@ -268,3 +268,5 @@ class FeatureProcessor:
 
         print("img_embed", img_embed.shape)
         print("seg_map", seg_map.shape)
+
+        # TODO: align features with image size then output embeddings.
