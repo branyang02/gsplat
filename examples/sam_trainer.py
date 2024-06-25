@@ -289,7 +289,7 @@ class Runner:
                 self.feature_dim,
                 cfg.app_embed_dim,
                 cfg.sh_degree,
-                output_dim=self.feature_dim + 3,
+                # output_dim=self.feature_dim + 3,  ##### added output_dim
             ).to(self.device)
             # initialize the last layer to be zero so that the initial output is zero.
             torch.nn.init.zeros_(self.app_module.color_head[-1].weight)
@@ -312,7 +312,7 @@ class Runner:
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(
             self.device
         )
-        self.cosine = torch.nn.CosineSimilarity(dim=-1).to(self.device) ##### added cosine similarity to evalute feature difference
+        self.mse = torch.nn.MSELoss().to(self.device) ##### added mse
 
         # Viewer
         if not self.cfg.disable_viewer:
@@ -353,8 +353,10 @@ class Runner:
                 dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
                 sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
             )
-            # colors = colors + self.splats["colors"]
-            # colors = torch.sigmoid(colors)
+            colors = colors + self.splats["colors"]
+            colors = torch.sigmoid(colors)
+            colors = torch.cat((colors, self.splats["features"].unsqueeze(0)), dim=-1)
+
         else:
             colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
 
@@ -830,7 +832,7 @@ class Runner:
             self.valset, batch_size=1, shuffle=False, num_workers=1
         )
         ellipse_time = 0
-        metrics = {"psnr": [], "ssim": [], "lpips": [], "cosine": []} ##### added cosine similarity
+        metrics = {"psnr": [], "ssim": [], "lpips": [], "mse": []} ##### added mse
         for i, data in enumerate(valloader):
             for key in data:
                 data[key] = data[key].squeeze(0)  ##### add 1 extra dimension
@@ -873,16 +875,16 @@ class Runner:
             metrics["psnr"].append(self.psnr(colors, pixels))
             metrics["ssim"].append(self.ssim(colors, pixels))
             metrics["lpips"].append(self.lpips(colors, pixels))
-            metrics["cosine"].append(self.cosine(features, language_features)) ##### added cosine similarity
+            metrics["mse"].append(self.mse(colors, pixels)) ##### added mse
 
         ellipse_time /= len(valloader)
 
         psnr = torch.stack(metrics["psnr"]).mean()
         ssim = torch.stack(metrics["ssim"]).mean()
         lpips = torch.stack(metrics["lpips"]).mean()
-        cosine = torch.stack(metrics["cosine"]).mean() ##### added cosine similarity
+        mse = torch.stack(metrics["mse"]).mean() ##### added mse
         print(
-            f"PSNR: {psnr.item():.3f}, SSIM: {ssim.item():.4f}, LPIPS: {lpips.item():.3f}, Cosine: {cosine.item():.3f}\n"
+            f"PSNR: {psnr.item():.3f}, SSIM: {ssim.item():.4f}, LPIPS: {lpips.item():.3f}, MSE: {mse.item():.3f}\n"
             f"Time: {ellipse_time:.3f}s/image \n"
             f"Number of GS: {len(self.splats['means3d'])}"
         )
@@ -891,7 +893,7 @@ class Runner:
             "psnr": psnr.item(),
             "ssim": ssim.item(),
             "lpips": lpips.item(),
-            "cosine": cosine.item(), ##### added cosine similarity
+            "mse": mse.item(), ##### added mse
             "ellipse_time": ellipse_time,
             "num_GS": len(self.splats["means3d"]),
         }
