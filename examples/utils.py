@@ -1,4 +1,5 @@
 import random
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -69,24 +70,25 @@ class SAMOptModule(torch.nn.Module):
         for _ in range(mlp_depth - 1):
             layers.append(torch.nn.Linear(mlp_width, mlp_width))
             layers.append(torch.nn.ReLU(inplace=True))
-        layers.append(
-            torch.nn.Linear(mlp_width, output_dim)
-        )  ##### changed from 3 to output_dim
+        layers.append(torch.nn.Linear(mlp_width, 3))  ##### outputs 3
         self.color_head = torch.nn.Sequential(*layers)
+
+        feature_layers = []
+        feature_layers.append(
+            torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width)
+        )
+        feature_layers.append(torch.nn.ReLU(inplace=True))
+        for _ in range(mlp_depth - 1):
+            feature_layers.append(torch.nn.Linear(mlp_width, mlp_width))
+            feature_layers.append(torch.nn.ReLU(inplace=True))
+        feature_layers.append(
+            torch.nn.Linear(mlp_width, output_dim)
+        )  ##### output feature_dim
+        self.feature_head = torch.nn.Sequential(*feature_layers)
 
     def forward(
         self, features: Tensor, embed_ids: Tensor, dirs: Tensor, sh_degree: int
-    ) -> Tensor:
-        """Adjust appearance based on embeddings.
-
-        Args:
-            features: (N, feature_dim)
-            embed_ids: (C,)
-            dirs: (C, N, 3)
-
-        Returns:
-            colors: (C, N, 3)
-        """
+    ) -> Tuple[Tensor, Tensor]:
         from gsplat.cuda._torch_impl import _eval_sh_bases_fast
 
         C, N = dirs.shape[:2]
@@ -110,7 +112,8 @@ class SAMOptModule(torch.nn.Module):
         else:
             h = torch.cat([features, sh_bases], dim=-1)
         colors = self.color_head(h)
-        return colors
+        features = self.feature_head(h)
+        return colors, features
 
 
 ##### TODO: Change the name of this class
