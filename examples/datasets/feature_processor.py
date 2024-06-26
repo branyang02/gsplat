@@ -18,8 +18,7 @@ except ImportError:
 
 
 class FeatureProcessor:
-    def __init__(self, sam_ckpt: str, embed_dim: int = 256, device: str = "cuda"):
-        self.embed_dim = embed_dim
+    def __init__(self, sam_ckpt: str, device: str = "cuda"):
         self.device = device
 
         self.model = OpenCLIPNetwork(OpenCLIPNetworkConfig)
