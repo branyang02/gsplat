@@ -875,7 +875,7 @@ class Runner:
             metrics["psnr"].append(self.psnr(colors, pixels))
             metrics["ssim"].append(self.ssim(colors, pixels))
             metrics["lpips"].append(self.lpips(colors, pixels))
-            metrics["mse"].append(self.mse(colors, pixels))  ##### added mse
+            metrics["mse"].append(self.mse(features, language_features))  ##### added mse
 
         ellipse_time /= len(valloader)
 
