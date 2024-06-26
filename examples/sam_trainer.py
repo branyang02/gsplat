@@ -122,7 +122,7 @@ class Config:
     # Enable appearance optimization. (experimental)
     app_opt: bool = True
     # Appearance embedding dimension
-    app_embed_dim: int = 16
+    app_embed_dim: Optional[int] = None
     # Learning rate for appearance optimization
     app_opt_lr: float = 1e-3
     # Regularization for appearance optimization as weight decay
@@ -287,13 +287,17 @@ class Runner:
             self.sam_module = SAMOptModule(
                 len(self.trainset),
                 self.feature_dim,
-                cfg.app_embed_dim,
+                cfg.app_embed_dim if cfg.app_embed_dim else self.feature_dim // 2,
                 cfg.sh_degree,
-                # output_dim=self.feature_dim + 3,  ##### added output_dim
+                output_dim=self.feature_dim,  ##### added output_dim
             ).to(self.device)
+            print(self.sam_module)
             # initialize the last layer to be zero so that the initial output is zero.
             torch.nn.init.zeros_(self.sam_module.color_head[-1].weight)
             torch.nn.init.zeros_(self.sam_module.color_head[-1].bias)
+            ##### initialize the last layer of feature_head to be zero
+            torch.nn.init.zeros_(self.sam_module.feature_head[-1].weight)
+            torch.nn.init.zeros_(self.sam_module.feature_head[-1].bias)
             self.app_optimizers = [
                 torch.optim.Adam(
                     self.sam_module.embeds.parameters(),
@@ -304,6 +308,10 @@ class Runner:
                     self.sam_module.color_head.parameters(),
                     lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
                 ),
+                torch.optim.Adam(
+                    self.sam_module.feature_head.parameters(),
+                    lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
+                ),  ##### added optimizer for feature_head
             ]
 
         # Losses & Metrics.
@@ -347,7 +355,7 @@ class Runner:
 
         image_ids = kwargs.pop("image_ids", None)
         if self.cfg.app_opt:
-            colors = self.sam_module(
+            colors, features = self.sam_module(
                 features=self.splats["features"],
                 embed_ids=image_ids,
                 dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
@@ -355,8 +363,9 @@ class Runner:
             )
             colors = colors + self.splats["colors"]
             colors = torch.sigmoid(colors)
-            colors = torch.cat((colors, self.splats["features"].unsqueeze(0)), dim=-1)
-
+            ##### added features
+            features = features + self.splats["features"]
+            colors = torch.cat([colors, features], -1)  # [(C,), N, 3 + feature_dim]
         else:
             colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
 
@@ -435,18 +444,18 @@ class Runner:
 
             camtoworlds = camtoworlds_gt = data["camtoworld"].to(device)  # [1, 4, 4]
             Ks = data["K"].to(device)  # [1, 3, 3]
-            pixels = data["image"][..., :3].to(device) / 255.0  # [1, H, W, 3]
-            language_features = data["image"][..., 3:].to(device)
-            language_features_mask = data["point_feature"].to(device)
+            gt_colors = data["image"][..., :3].to(device) / 255.0  # [1, H, W, 3]
+            gt_language_features = data["image"][..., 3:].to(device)
+            gt_language_features_mask = data["point_feature"].to(device)
             num_train_rays_per_step = (
-                pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
+                gt_colors.shape[0] * gt_colors.shape[1] * gt_colors.shape[2]
             )
             image_ids = data["image_id"].to(device)
             if cfg.depth_loss:
                 points = data["points"].to(device)  # [1, M, 2]
                 depths_gt = data["depths"].to(device)  # [1, M]
 
-            height, width = pixels.shape[1:3]
+            height, width = gt_colors.shape[1:3]
 
             if cfg.pose_noise:
                 camtoworlds = self.pose_perturb(camtoworlds, image_ids)
@@ -483,18 +492,18 @@ class Runner:
             info["means2d"].retain_grad()  # used for running stats
 
             # loss
-            ##### TODO: verify the correctness of the loss function for language_features.
-            l1loss_colors = F.l1_loss(colors, pixels)  ##### changed variable name
+            ##### TODO: verify the correctness of the loss function for gt_language_features.
+            l1loss_colors = F.l1_loss(colors, gt_colors)  ##### changed variable name
             l1loss_features = (
                 F.l1_loss(
-                    features * language_features_mask.unsqueeze(-1),
-                    language_features * language_features_mask.unsqueeze(-1),
+                    features * gt_language_features_mask.unsqueeze(-1),
+                    gt_language_features * gt_language_features_mask.unsqueeze(-1),
                 )
                 if cfg.app_opt
                 else 0.0
             )  ##### added l1loss_features
             ssimloss = 1.0 - self.ssim(
-                pixels.permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
+                gt_colors.permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
             )
             loss = (
                 l1loss_colors * (1.0 - cfg.ssim_lambda)
@@ -549,7 +558,9 @@ class Runner:
                 if cfg.depth_loss:
                     self.writer.add_scalar("train/depthloss", depthloss.item(), step)
                 if cfg.tb_save_image:
-                    canvas = torch.cat([pixels, colors], dim=2).detach().cpu().numpy()
+                    canvas = (
+                        torch.cat([gt_colors, colors], dim=2).detach().cpu().numpy()
+                    )
                     canvas = canvas.reshape(-1, *canvas.shape[2:])
                     self.writer.add_image("train/render", canvas, step)
                 self.writer.flush()
@@ -845,9 +856,9 @@ class Runner:
 
             camtoworlds = data["camtoworld"].to(device)
             Ks = data["K"].to(device)
-            pixels = data["image"][..., :3].to(device) / 255.0
-            language_features = data["image"][..., 3:].to(device)
-            height, width = pixels.shape[1:3]
+            gt_colors = data["image"][..., :3].to(device) / 255.0
+            gt_language_features = data["image"][..., 3:].to(device)
+            height, width = gt_colors.shape[1:3]
 
             torch.cuda.synchronize()
             tic = time.time()
@@ -871,18 +882,18 @@ class Runner:
             ellipse_time += time.time() - tic
 
             # write images
-            canvas = torch.cat([pixels, colors], dim=2).squeeze(0).cpu().numpy()
+            canvas = torch.cat([gt_colors, colors], dim=2).squeeze(0).cpu().numpy()
             imageio.imwrite(
                 f"{self.render_dir}/val_{i:04d}.png", (canvas * 255).astype(np.uint8)
             )
 
-            pixels = pixels.permute(0, 3, 1, 2)  # [1, 3, H, W]
+            gt_colors = gt_colors.permute(0, 3, 1, 2)  # [1, 3, H, W]
             colors = colors.permute(0, 3, 1, 2)  # [1, 3, H, W]
-            metrics["psnr"].append(self.psnr(colors, pixels))
-            metrics["ssim"].append(self.ssim(colors, pixels))
-            metrics["lpips"].append(self.lpips(colors, pixels))
+            metrics["psnr"].append(self.psnr(colors, gt_colors))
+            metrics["ssim"].append(self.ssim(colors, gt_colors))
+            metrics["lpips"].append(self.lpips(colors, gt_colors))
             metrics["mse"].append(
-                self.mse(features, language_features)
+                self.mse(features, gt_language_features)
             )  ##### added mse
 
         ellipse_time /= len(valloader)
@@ -982,7 +993,7 @@ class Runner:
             width=W,
             height=H,
             sh_degree=self.cfg.sh_degree,  # active all SH degrees
-            radius_clip=3.0,  # skip GSs that have small image radius (in pixels)
+            radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
         )  # [1, H, W, 3]
         return render_colors[0].cpu().numpy()
 
