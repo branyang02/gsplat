@@ -437,6 +437,7 @@ class Runner:
             Ks = data["K"].to(device)  # [1, 3, 3]
             pixels = data["image"][..., :3].to(device) / 255.0  # [1, H, W, 3]
             language_features = data["image"][..., 3:].to(device)
+            language_features_mask = data["point_feature"].to(device)
             num_train_rays_per_step = (
                 pixels.shape[0] * pixels.shape[1] * pixels.shape[2]
             )
@@ -485,7 +486,12 @@ class Runner:
             ##### TODO: verify the correctness of the loss function for language_features.
             l1loss_colors = F.l1_loss(colors, pixels)  ##### changed variable name
             l1loss_features = (
-                F.l1_loss(features, language_features) if cfg.app_opt else 0.0
+                F.l1_loss(
+                    features * language_features_mask.unsqueeze(-1),
+                    language_features * language_features_mask.unsqueeze(-1),
+                )
+                if cfg.app_opt
+                else 0.0
             )  ##### added l1loss_features
             ssimloss = 1.0 - self.ssim(
                 pixels.permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
@@ -875,7 +881,9 @@ class Runner:
             metrics["psnr"].append(self.psnr(colors, pixels))
             metrics["ssim"].append(self.ssim(colors, pixels))
             metrics["lpips"].append(self.lpips(colors, pixels))
-            metrics["mse"].append(self.mse(features, language_features))  ##### added mse
+            metrics["mse"].append(
+                self.mse(features, language_features)
+            )  ##### added mse
 
         ellipse_time /= len(valloader)
 
