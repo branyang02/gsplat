@@ -338,6 +338,7 @@ class Dataset:
                     "camtoworld": torch.from_numpy(camtoworlds).float(),
                     "image": image,
                     "image_id": item,  # the index of the image in the dataset
+                    "point_feature": point_feature,
                 }
         else:
             data = {
