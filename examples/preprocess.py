@@ -31,7 +31,8 @@ class PreProcessor:
         val_dir = os.path.join(cfg.data_dir, "valset")
         os.makedirs(val_dir, exist_ok=True)
 
-        # mp.set_start_method("spawn")
+        if not cfg.disable_sam:
+            mp.set_start_method("spawn")
 
         self.parser = Parser(
             data_dir=cfg.data_dir,
@@ -61,7 +62,7 @@ class PreProcessor:
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=1,
-            shuffle=True,
+            shuffle=False,
             num_workers=cfg.num_workers,
             persistent_workers=True,
             pin_memory=True,
@@ -71,7 +72,12 @@ class PreProcessor:
             torch.save(batch, f"{train_dir}/{i}.pt")
 
         valloader = torch.utils.data.DataLoader(
-            self.valset, batch_size=1, shuffle=False, num_workers=1
+            self.valset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=cfg.num_workers,
+            persistent_workers=True,
+            pin_memory=True,
         )
 
         for i, batch in enumerate(tqdm.tqdm(valloader)):
