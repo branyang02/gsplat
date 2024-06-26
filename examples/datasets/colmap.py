@@ -309,19 +309,17 @@ class Dataset:
         if self.embed_dim is not None:
             if not self.kwargs["disable_sam"]:
                 point_feature, mask = self.processor.process(image)
-                print(f"point_feature: {point_feature.shape}, mask: {mask.shape}")
 
                 point_feature = point_feature.permute(1, 2, 0)
                 image = torch.from_numpy(image).float().to(point_feature.device)
                 image_with_feature = torch.cat([image, point_feature], dim=-1)
-                print(f"image_with_feature: {image_with_feature.shape}")
 
                 data = {
                     "K": torch.from_numpy(K).float(),
                     "camtoworld": torch.from_numpy(camtoworlds).float(),
-                    "image": image_with_feature,
+                    "image": image_with_feature.to("cpu"),
                     "image_id": item,  # the index of the image in the dataset
-                    "point_feature": mask.squeeze(0),
+                    "point_feature": mask.squeeze(0).to("cpu"),
                 }
             else:
                 # Create random embedding instead
