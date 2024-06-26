@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from utils import (
-    AppearanceOptModule,
+    SAMOptModule,
     CameraOptModule,
     knn,
     normalized_quat_to_rotmat,
@@ -284,7 +284,7 @@ class Runner:
 
         self.app_optimizers = []
         if cfg.app_opt:
-            self.app_module = AppearanceOptModule(
+            self.sam_module = SAMOptModule(
                 len(self.trainset),
                 self.feature_dim,
                 cfg.app_embed_dim,
@@ -292,16 +292,16 @@ class Runner:
                 # output_dim=self.feature_dim + 3,  ##### added output_dim
             ).to(self.device)
             # initialize the last layer to be zero so that the initial output is zero.
-            torch.nn.init.zeros_(self.app_module.color_head[-1].weight)
-            torch.nn.init.zeros_(self.app_module.color_head[-1].bias)
+            torch.nn.init.zeros_(self.sam_module.color_head[-1].weight)
+            torch.nn.init.zeros_(self.sam_module.color_head[-1].bias)
             self.app_optimizers = [
                 torch.optim.Adam(
-                    self.app_module.embeds.parameters(),
+                    self.sam_module.embeds.parameters(),
                     lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
                     weight_decay=cfg.app_opt_reg,
                 ),
                 torch.optim.Adam(
-                    self.app_module.color_head.parameters(),
+                    self.sam_module.color_head.parameters(),
                     lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
                 ),
             ]
@@ -347,7 +347,7 @@ class Runner:
 
         image_ids = kwargs.pop("image_ids", None)
         if self.cfg.app_opt:
-            colors = self.app_module(
+            colors = self.sam_module(
                 features=self.splats["features"],
                 embed_ids=image_ids,
                 dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
