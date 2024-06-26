@@ -6,6 +6,7 @@ import torch
 import tqdm
 import tyro
 from datasets.colmap import Dataset, Parser
+import torch.multiprocessing as mp
 
 
 @dataclass
@@ -15,9 +16,11 @@ class Config:
     test_every: int = 8
     patch_size: Optional[int] = None
     depth_loss: bool = False
-    embed_dim: int = 128
+    embed_dim: int = 512
     sam_model: str = "vit_h"
     sam_ckpt: str = "ckpts/sam_vit_h_4b8939.pth"
+    disable_sam: bool = False
+    num_workers: int = 4
 
 
 class PreProcessor:
@@ -27,6 +30,8 @@ class PreProcessor:
         os.makedirs(train_dir, exist_ok=True)
         val_dir = os.path.join(cfg.data_dir, "valset")
         os.makedirs(val_dir, exist_ok=True)
+
+        # mp.set_start_method("spawn")
 
         self.parser = Parser(
             data_dir=cfg.data_dir,
@@ -42,6 +47,7 @@ class PreProcessor:
             embed_dim=cfg.embed_dim,
             sam_model=cfg.sam_model,
             sam_ckpt=cfg.sam_ckpt,
+            disable_sam=cfg.disable_sam,
         )
         self.valset = Dataset(
             self.parser,
@@ -49,13 +55,14 @@ class PreProcessor:
             embed_dim=cfg.embed_dim,
             sam_model=cfg.sam_model,
             sam_ckpt=cfg.sam_ckpt,
+            disable_sam=cfg.disable_sam,
         )
 
         trainloader = torch.utils.data.DataLoader(
             self.trainset,
             batch_size=1,
             shuffle=True,
-            num_workers=4,
+            num_workers=cfg.num_workers,
             persistent_workers=True,
             pin_memory=True,
         )
