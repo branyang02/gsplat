@@ -312,7 +312,7 @@ class Runner:
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(
             self.device
         )
-        self.mse = torch.nn.MSELoss().to(self.device) ##### added mse
+        self.mse = torch.nn.MSELoss().to(self.device)  ##### added mse
 
         # Viewer
         if not self.cfg.disable_viewer:
@@ -832,7 +832,7 @@ class Runner:
             self.valset, batch_size=1, shuffle=False, num_workers=1
         )
         ellipse_time = 0
-        metrics = {"psnr": [], "ssim": [], "lpips": [], "mse": []} ##### added mse
+        metrics = {"psnr": [], "ssim": [], "lpips": [], "mse": []}  ##### added mse
         for i, data in enumerate(valloader):
             for key in data:
                 data[key] = data[key].squeeze(0)  ##### add 1 extra dimension
@@ -875,14 +875,14 @@ class Runner:
             metrics["psnr"].append(self.psnr(colors, pixels))
             metrics["ssim"].append(self.ssim(colors, pixels))
             metrics["lpips"].append(self.lpips(colors, pixels))
-            metrics["mse"].append(self.mse(colors, pixels)) ##### added mse
+            metrics["mse"].append(self.mse(colors, pixels))  ##### added mse
 
         ellipse_time /= len(valloader)
 
         psnr = torch.stack(metrics["psnr"]).mean()
         ssim = torch.stack(metrics["ssim"]).mean()
         lpips = torch.stack(metrics["lpips"]).mean()
-        mse = torch.stack(metrics["mse"]).mean() ##### added mse
+        mse = torch.stack(metrics["mse"]).mean()  ##### added mse
         print(
             f"PSNR: {psnr.item():.3f}, SSIM: {ssim.item():.4f}, LPIPS: {lpips.item():.3f}, MSE: {mse.item():.3f}\n"
             f"Time: {ellipse_time:.3f}s/image \n"
@@ -893,7 +893,7 @@ class Runner:
             "psnr": psnr.item(),
             "ssim": ssim.item(),
             "lpips": lpips.item(),
-            "mse": mse.item(), ##### added mse
+            "mse": mse.item(),  ##### added mse
             "ellipse_time": ellipse_time,
             "num_GS": len(self.splats["means3d"]),
         }
