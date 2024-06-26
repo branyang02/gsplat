@@ -1,23 +1,13 @@
 from .clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
 
 
-import os
-import random
-import argparse
-
 import numpy as np
 import torch
-from tqdm import tqdm
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 import cv2
 
-from dataclasses import dataclass, field
-from typing import Tuple, Type
-from copy import deepcopy
 
 import torch
-import torchvision
-from torch import nn
 
 try:
     import open_clip
@@ -45,6 +35,7 @@ class FeatureProcessor:
             min_mask_region_area=100,
         )
         print("Feature Processor Initialized")
+        self.mask_generator.predictor.model.to(self.device)
 
     def filter(self, keep: torch.Tensor, masks_result) -> None:
         keep = keep.int().cpu().numpy()
@@ -234,21 +225,14 @@ class FeatureProcessor:
 
         return clip_embeds, seg_map
 
-    def process(self, image: np.ndarray):
+    def process(self, image: np.ndarray, feature_level: int = 0):
         # image (H, W, 3)
-        self.mask_generator.predictor.model.to(self.device)
+        height, width = image.shape[:2]
+
         img_embed, seg_map = self._embed_clip_sam_tiles(image)
-        for k, v in img_embed.items():
-            print(k, v.shape)
-        print("-" * 50)
-        for k, v in seg_map.items():
-            print(k, v.shape)
-        print("-" * 50)
 
         lengths = [len(v) for k, v in img_embed.items()]
         total_length = sum(lengths)
-
-        print("total_length: ", total_length)
 
         img_embed = torch.cat([v for k, v in img_embed.items()], dim=0)
         assert img_embed.shape[0] == total_length
@@ -266,7 +250,26 @@ class FeatureProcessor:
             seg_map_tensor.append(torch.from_numpy(v))
         seg_map = torch.stack(seg_map_tensor, dim=0)
 
-        print("img_embed", img_embed.shape)
-        print("seg_map", seg_map.shape)
+        y, x = torch.meshgrid(torch.arange(0, height), torch.arange(0, width))
+        x = x.reshape(-1, 1)  # torch.Size([404301, 1])
+        y = y.reshape(-1, 1)
+        seg = seg_map[:, y, x].squeeze(-1).long()
+        mask = seg != -1
+        if feature_level == 0:  # default
+            point_feature1 = img_embed[seg[0:1]].squeeze(0)
+            mask = mask[0:1].reshape(1, height, width)
+        elif feature_level == 1:  # s
+            point_feature1 = img_embed[seg[1:2]].squeeze(0)
+            mask = mask[1:2].reshape(1, height, width)
+        elif feature_level == 2:  # m
+            point_feature1 = img_embed[seg[2:3]].squeeze(0)
+            mask = mask[2:3].reshape(1, height, width)
+        elif feature_level == 3:  # l
+            point_feature1 = img_embed[seg[3:4]].squeeze(0)
+            mask = mask[3:4].reshape(1, height, width)
+        else:
+            raise ValueError("feature_level=", feature_level)
+        # point_feature = torch.cat((point_feature2, point_feature3, point_feature4), dim=-1).to('cuda')
+        point_feature = point_feature1.reshape(height, width, -1).permute(2, 0, 1)
 
-        # TODO: align features with image size then output embeddings.
+        return point_feature.cuda(), mask.cuda()

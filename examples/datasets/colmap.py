@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from pycolmap import SceneManager
 
+
 from .normalize import (
     align_principle_axes,
     similarity_from_cameras,
@@ -15,6 +16,7 @@ from .normalize import (
 )
 
 from .feature_processor import FeatureProcessor
+
 
 def _get_rel_paths(path_dir: str) -> List[str]:
     """Recursively get relative paths of files in a directory."""
@@ -267,10 +269,12 @@ class Dataset:
         else:
             self.indices = indices[indices % self.parser.test_every == 0]
 
-        if self.embed_dim is not None:
+        if self.embed_dim is not None and not kwargs["disable_sam"]:
             self.processor = FeatureProcessor(
                 sam_ckpt=kwargs["sam_ckpt"], embed_dim=self.embed_dim
             )
+
+        self.kwargs = kwargs
 
     def __len__(self):
         return len(self.indices)
@@ -303,15 +307,38 @@ class Dataset:
             K[1, 2] -= y
 
         if self.embed_dim is not None:
-            data = self.processor.process(image)
+            if not self.kwargs["disable_sam"]:
+                point_feature, mask = self.processor.process(image)
+                print(f"point_feature: {point_feature.shape}, mask: {mask.shape}")
 
-            # TODO: placeholder
-            data = {
-                "K": torch.from_numpy(K).float(),
-                "camtoworld": torch.from_numpy(camtoworlds).float(),
-                "image": torch.from_numpy(image).float(),
-                "image_id": item,  # the index of the image in the dataset
-            }
+                point_feature = point_feature.permute(1, 2, 0)
+                image = torch.from_numpy(image).float().to(point_feature.device)
+                image_with_feature = torch.cat([image, point_feature], dim=-1)
+                print(f"image_with_feature: {image_with_feature.shape}")
+
+                data = {
+                    "K": torch.from_numpy(K).float(),
+                    "camtoworld": torch.from_numpy(camtoworlds).float(),
+                    "image": image_with_feature,
+                    "image_id": item,  # the index of the image in the dataset
+                    "point_feature": mask.squeeze(0),
+                }
+            else:
+                # Create random embedding instead
+                torch.manual_seed(index)
+                h, w = image.shape[:2]
+                embedding = torch.randn(h, w, self.embed_dim)
+                image = torch.from_numpy(image).float()
+                image = torch.cat((image, embedding), dim=2)
+                # fmt: off
+                point_feature = torch.randint(0, 2, (h, w),).float()
+
+                data = {
+                    "K": torch.from_numpy(K).float(),
+                    "camtoworld": torch.from_numpy(camtoworlds).float(),
+                    "image": image,
+                    "image_id": item,  # the index of the image in the dataset
+                }
         else:
             data = {
                 "K": torch.from_numpy(K).float(),
