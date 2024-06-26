@@ -270,9 +270,7 @@ class Dataset:
             self.indices = indices[indices % self.parser.test_every == 0]
 
         if self.embed_dim is not None and not kwargs["disable_sam"]:
-            self.processor = FeatureProcessor(
-                sam_ckpt=kwargs["sam_ckpt"], embed_dim=self.embed_dim
-            )
+            self.processor = FeatureProcessor(sam_ckpt=kwargs["sam_ckpt"])
 
         self.kwargs = kwargs
 
