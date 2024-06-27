@@ -34,9 +34,9 @@ class CameraState(object):
 class ViewerState(object):
     num_train_rays_per_sec: Optional[float] = None
     num_view_rays_per_sec: float = 100000.0
-    status: Literal[
-        "rendering", "preparing", "training", "paused", "completed"
-    ] = "training"
+    status: Literal["rendering", "preparing", "training", "paused", "completed"] = (
+        "training"
+    )
 
 
 VIEWER_LOCK = Lock()
@@ -138,10 +138,15 @@ class Viewer(object):
         ) as self._feature_folder:
             self._feature_query = self.server.gui.add_text(
                 "Text",
-                initial_value="Box",
+                initial_value="plant",
             )
             self._feature_vis_button = self.server.gui.add_button("Find Features")
             self._feature_vis_button.on_click(self.rerender)
+
+            self._feature_similarity_threshold = self.server.gui.add_slider(
+                "Similarity Threshold", min=0.0, max=1.0, step=0.01, initial_value=0.3
+            )
+            self._feature_similarity_threshold.on_update(self.rerender)
 
     def _toggle_train_buttons(self, _):
         self._pause_train_button.visible = not self._pause_train_button.visible
