@@ -146,7 +146,10 @@ class Renderer(threading.Thread):
                     W, H = img_wh = self._get_img_wh(task.camera_state.aspect)
                     feature_query = self._get_feature_query()  ##### added
                     rendered = self.viewer.render_fn(
-                        task.camera_state, img_wh, feature_query=feature_query
+                        task.camera_state,
+                        img_wh,
+                        feature_query=feature_query,
+                        feature_similarity_threshold=self.viewer._feature_similarity_threshold.value,
                     )  ##### added feature_query kwargs
                     if isinstance(rendered, tuple):
                         img, depth = rendered

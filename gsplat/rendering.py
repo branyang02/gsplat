@@ -37,6 +37,7 @@ def rasterization(
     absgrad: bool = False,
     rasterize_mode: Literal["classic", "antialiased"] = "classic",
     channel_chunk: int = 32,
+    **kwargs,
 ) -> Tuple[Tensor, Tensor, Dict]:
     """Rasterize a set of 3D Gaussians (N) to a batch of image planes (C).
 
@@ -188,6 +189,32 @@ def rasterization(
         'flatten_ids', 'isect_offsets', 'width', 'height', 'tile_size'])
 
     """
+    ##### Highlight similar features if queried #####
+    feature_embeds = kwargs.get("feature_embeds", None)
+
+    if feature_embeds is not None:
+        feature_map = colors[..., 3:]
+        similarity_threshold = kwargs.get("feature_similarity_threshold", 0.3)
+
+        norm_feature_map = feature_map / feature_map.norm(dim=2, keepdim=True)
+        norm_feature_embeds = feature_embeds / feature_embeds.norm(dim=1, keepdim=True)
+
+        norm_feature_map = norm_feature_map.to(dtype=norm_feature_embeds.dtype)
+
+        cosine_sim = torch.matmul(
+            norm_feature_map, norm_feature_embeds.unsqueeze(-1)
+        ).squeeze(
+            -1
+        )  # Shape: [1, N]
+
+        similar_indices = torch.nonzero(cosine_sim > similarity_threshold).squeeze()[
+            :, 1
+        ]
+        bright_color = torch.tensor(
+            [255, 0, 0], dtype=colors.dtype, device=colors.device
+        )
+
+        colors[:, similar_indices, :3] = bright_color
 
     N = means.shape[0]
     C = viewmats.shape[0]
