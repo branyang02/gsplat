@@ -4,3 +4,6 @@
 [submodule "segment-anything-langsplat"]
 	path = segment-anything-langsplat
 	url = https://github.com/minghanqin/segment-anything-langsplat.git
+[submodule "viser"]
+	path = viser
+	url = https://github.com/nerfstudio-project/viser.git
