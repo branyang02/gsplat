@@ -1,15 +1,11 @@
 import argparse
 import math
-import os
 import time
 from typing import Dict, Tuple
 
-import imageio
 import nerfview
-import numpy as np
 import torch
 from torch import Tensor
-import torch.nn.functional as F
 import viser
 from examples.utils import SAMOptModule
 from gsplat.rendering import rasterization
