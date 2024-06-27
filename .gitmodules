@@ -7,6 +7,3 @@
 [submodule "viser"]
 	path = viser
 	url = https://github.com/nerfstudio-project/viser.git
-[submodule "nerfview"]
-	path = nerfview
-	url = https://github.com/hangg7/nerfview.git
