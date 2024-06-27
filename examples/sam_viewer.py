@@ -114,7 +114,6 @@ def rasterize_splats(
 # register and open viewer
 @torch.no_grad()
 def viewer_render_fn(camera_state: nerfview.CameraState, img_wh: Tuple[int, int]):
-    global sh_degree
 
     W, H = img_wh
     c2w = camera_state.c2w
