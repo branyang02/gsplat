@@ -1,3 +1,49 @@
+# Installation
+
+```
+git clone --recurse-submodules https://github.com/branyang02/gsplat.git
+```
+
+Install `gsplat` locally
+
+```
+pip install -e .
+```
+
+Install `segment-anything-langsplat`
+
+```
+pip install -e segment-anything-langsplat
+```
+
+Additionally, download SAM checkpoint and COLMAP data.
+
+# Usage
+
+Scripts are provided in the `example` directory.
+
+1. Preprocess data
+
+```
+python preprocess.py --data_dir data/[dataset_dir] --sam_ckpt [sam_ckpt] --num_workers 8
+```
+
+This saves the precomputed embeddings in data/[dataset_dir]/trainset and data/[dataset_dir]/valset.
+
+Note: adjust `num_workers` based on your machine's capacity.
+
+2. Train
+
+```
+python sam_trainer.py --data_dir data/[dataset_dir] --result_dir results/[dataset_dir]
+```
+
+3. Visualize
+
+```
+python sam_viewer.py --ckpt results/[dataset_dir]/ckpts/[ckpt]
+```
+
 # gsplat
 
 [![Core Tests.](https://github.com/nerfstudio-project/gsplat/actions/workflows/core_tests.yml/badge.svg?branch=main)](https://github.com/nerfstudio-project/gsplat/actions/workflows/core_tests.yml)
@@ -5,7 +51,7 @@
 
 [http://www.gsplat.studio/](http://www.gsplat.studio/)
 
-gsplat is an open-source library for CUDA accelerated rasterization of gaussians with python bindings. It is inspired by the SIGGRAPH paper [3D Gaussian Splatting for Real-Time Rendering of Radiance Fields](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/), but we’ve made gsplat even faster, more memory efficient, and with a growing list of new features! 
+gsplat is an open-source library for CUDA accelerated rasterization of gaussians with python bindings. It is inspired by the SIGGRAPH paper [3D Gaussian Splatting for Real-Time Rendering of Radiance Fields](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/), but we’ve made gsplat even faster, more memory efficient, and with a growing list of new features!
 
 <div align="center">
   <video src="https://github.com/nerfstudio-project/gsplat/assets/10151885/64c2e9ca-a9a6-4c7e-8d6f-47eeacd15159" width="100%" />
@@ -14,9 +60,6 @@ gsplat is an open-source library for CUDA accelerated rasterization of gaussians
 ## Installation
 
 **Dependence**: Please install [Pytorch](https://pytorch.org/get-started/locally/) first.
-
-
-
 
 The easiest way is to install from PyPI. In this way it will build the CUDA code **on the first run** (JIT).
 
@@ -54,7 +97,6 @@ the examples (requires to install some exta dependences via `pip install -r exam
 - [Fit a 2D image with 3D Gaussians.](https://docs.gsplat.studio/main/examples/image.html)
 - [Render a large scene in real-time.](https://docs.gsplat.studio/main/examples/large_scale.html)
 
-
 ## Development and Contribution
 
 This repository was born from the curiosity of people on the Nerfstudio team trying to understand a new rendering technique. We welcome contributions of any kind and are open to feedback, bug-reports, and improvements to help expand the capabilities of this software.
@@ -75,7 +117,7 @@ We also have made the mathematical supplement, with conventions and derivations,
 
 ```
 @misc{ye2023mathematical,
-    title={Mathematical Supplement for the $\texttt{gsplat}$ Library}, 
+    title={Mathematical Supplement for the $\texttt{gsplat}$ Library},
     author={Vickie Ye and Angjoo Kanazawa},
     year={2023},
     eprint={2312.02121},
