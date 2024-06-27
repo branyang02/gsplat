@@ -83,6 +83,9 @@ class Renderer(threading.Thread):
                 raise InterruptRenderException
         return self._may_interrupt_trace
 
+    def _get_feature_query(self):  ##### added
+        return self.viewer._feature_query.value
+
     def _get_img_wh(self, aspect: float) -> Tuple[int, int]:
         max_img_res = self.viewer._max_img_res_slider.value
         if self._state == "high":
@@ -141,7 +144,10 @@ class Renderer(threading.Thread):
                 with self.lock, set_trace_context(self._may_interrupt_trace):
                     tic = time.time()
                     W, H = img_wh = self._get_img_wh(task.camera_state.aspect)
-                    rendered = self.viewer.render_fn(task.camera_state, img_wh)
+                    feature_query = self._get_feature_query()  ##### added
+                    rendered = self.viewer.render_fn(
+                        task.camera_state, img_wh, feature_query=feature_query
+                    )  ##### added feature_query kwargs
                     if isinstance(rendered, tuple):
                         img, depth = rendered
                     else:
