@@ -667,6 +667,7 @@ class Runner:
                     {
                         "step": step,
                         "splats": self.splats.state_dict(),
+                        "sam_module": self.sam_module.state_dict(),  ##### Save state of self.sam_module
                     },
                     f"{self.ckpt_dir}/ckpt_{step}.pt",
                 )
