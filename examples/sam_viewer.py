@@ -5,6 +5,7 @@ from typing import Dict, Literal, Tuple
 
 import tyro
 
+from examples.datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
 import nerfview
 import torch
 from torch import Tensor
@@ -34,6 +35,10 @@ class Renderer:
             ckpt["sam_module"]
         )  # TODO: check sh_degree logic
         self.splats = ckpt["splats"]
+
+        # clip
+        self.clip = OpenCLIPNetwork(OpenCLIPNetworkConfig)
+        print("clip_model", self.clip)
 
     def start_server(self):
 
@@ -108,7 +113,7 @@ class Renderer:
             quats=quats,
             scales=scales,
             opacities=opacities,
-            colors=colors,  ## TODO: render color vs colors_with_features
+            colors=colors_with_features,
             viewmats=torch.linalg.inv(camtoworlds),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
@@ -127,7 +132,10 @@ class Renderer:
         self, camera_state: nerfview.CameraState, img_wh: Tuple[int, int], **kwargs
     ):
         feature_query = kwargs.get("feature_query", None)
-        print("feature_query", feature_query)
+        print("feature_query: ", feature_query)
+
+        tok_phrase = self.clip.tokenizer(feature_query).to(self.cfg.device)
+        feature_embeds = self.clip.model.encode_text(tok_phrase)  # [1, 512]
 
         W, H = img_wh
         c2w = camera_state.c2w
@@ -141,8 +149,10 @@ class Renderer:
             width=W,
             height=H,
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
+            feature_embeds=feature_embeds,
+            **kwargs,
         )  # [1, H, W, 3]
-        print(render_colors.shape)
+        render_colors = render_colors[..., :3]
         return render_colors[0].cpu().numpy()
 
 
