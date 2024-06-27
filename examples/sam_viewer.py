@@ -96,7 +96,7 @@ def rasterize_splats(
         quats=quats,
         scales=scales,
         opacities=opacities,
-        colors=colors_with_features,
+        colors=colors,
         viewmats=torch.linalg.inv(camtoworlds),  # [C, 4, 4]
         Ks=Ks,  # [C, 3, 3]
         width=width,
@@ -113,7 +113,11 @@ def rasterize_splats(
 
 # register and open viewer
 @torch.no_grad()
-def viewer_render_fn(camera_state: nerfview.CameraState, img_wh: Tuple[int, int]):
+def viewer_render_fn(
+    camera_state: nerfview.CameraState, img_wh: Tuple[int, int], **kwargs
+):
+    feature_query = kwargs.get("feature_query", None)
+    print("feature_query", feature_query)
 
     W, H = img_wh
     c2w = camera_state.c2w
