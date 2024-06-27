@@ -207,9 +207,7 @@ def rasterization(
             -1
         )  # Shape: [1, N]
 
-        similar_indices = torch.nonzero(cosine_sim > similarity_threshold).squeeze()[
-            :, 1
-        ]
+        similar_indices = torch.nonzero(cosine_sim > similarity_threshold).squeeze()
         bright_color = torch.tensor(
             [255, 0, 0], dtype=colors.dtype, device=colors.device
         )
