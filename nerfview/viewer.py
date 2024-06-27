@@ -133,6 +133,16 @@ class Viewer(object):
             )
             self._max_img_res_slider.on_update(self.rerender)
 
+        with self.server.gui.add_folder(
+            "Feature Visualization"
+        ) as self._feature_folder:
+            self._feature_query = self.server.gui.add_text(
+                "Text",
+                initial_value="Box",
+            )
+            self._feature_vis_button = self.server.gui.add_button("Find Features")
+            self._feature_vis_button.on_click(self.rerender)
+
     def _toggle_train_buttons(self, _):
         self._pause_train_button.visible = not self._pause_train_button.visible
         self._resume_train_button.visible = not self._resume_train_button.visible
