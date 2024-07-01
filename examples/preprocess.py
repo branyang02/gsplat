@@ -25,7 +25,6 @@ class Config:
 
 class PreProcessor:
     def __init__(self, cfg: Config):
-
         train_dir = os.path.join(cfg.data_dir, "trainset")
         os.makedirs(train_dir, exist_ok=True)
         val_dir = os.path.join(cfg.data_dir, "valset")
