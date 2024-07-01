@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from fast_pytorch_kmeans import KMeans
 import math
 import time
 from typing import Dict, Literal, Tuple
@@ -13,6 +14,8 @@ import viser
 from examples.utils import SAMOptModule
 from gsplat.rendering import rasterization
 
+from gsplat._helper import *
+
 
 @dataclass
 class Config:
@@ -24,7 +27,6 @@ class Config:
 
 
 class Renderer:
-
     def __init__(
         self,
         ckpt: str,
@@ -40,8 +42,10 @@ class Renderer:
         self.clip = OpenCLIPNetwork(OpenCLIPNetworkConfig)
         print("clip_model", self.clip)
 
-    def start_server(self):
+        # others
+        self.feature_colors = None
 
+    def start_server(self):
         self.server = viser.ViserServer(port=self.cfg.port, verbose=False)
         self.viewer = nerfview.Viewer(
             server=self.server,
@@ -52,7 +56,6 @@ class Renderer:
         time.sleep(100000)
 
     def _get_sam_module(self, sam_state_dict):
-
         n = sam_state_dict["embeds.weight"].shape[0]
         feature_dim = sam_state_dict["feature_head.4.weight"].shape[0]
         embed_dim = sam_state_dict["embeds.weight"].shape[1]
@@ -88,7 +91,6 @@ class Renderer:
         height: int,
         **kwargs,
     ) -> Tuple[Tensor, Tensor, Dict]:
-
         means = self.splats["means3d"]
         quats = self.splats["quats"]
         scales = torch.exp(self.splats["scales"])
@@ -105,6 +107,29 @@ class Renderer:
         )
         colors = colors + self.splats["colors"]
         colors = torch.sigmoid(colors)
+
+        ## TODO: create color clone that only displays feature colors
+        if kwargs.get("segment", False):
+            if self.feature_colors is None:
+                # run K means on features
+                self.feature_colors = colors.clone()
+                num_clusters = 20
+                kmeans = KMeans(
+                    n_clusters=num_clusters,
+                    mode="cosine",
+                    verbose=1,
+                    max_iter=1000,
+                )
+                labels = kmeans.fit_predict(self.feature_colors.squeeze(0))
+                palette = (
+                    torch.randint(0, 256, (num_clusters, 3)).float().cuda() / 255.0
+                )
+                for cluster in range(num_clusters):
+                    cluster_indices = (labels == cluster).nonzero(as_tuple=True)[0]
+                    self.feature_colors[0, cluster_indices] = palette[cluster]
+
+            colors = self.feature_colors
+
         features = features + self.splats["features"]
         colors_with_features = torch.cat([colors, features], dim=-1)
 
@@ -150,6 +175,7 @@ class Renderer:
             height=H,
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
             feature_embeds=feature_embeds,
+            segment=True,
             **kwargs,
         )  # [1, H, W, 3]
         render_colors = render_colors[..., :3]
