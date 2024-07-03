@@ -100,6 +100,17 @@ class Viewer(object):
         self._define_guis()
 
     def _define_guis(self):
+        # up direction
+        gui_up = self.server.gui.add_vector3(
+            "Up Direction",
+            initial_value=(0.0, 0.0, 1.0),
+            step=1,
+        )
+
+        @gui_up.on_update
+        def _(_) -> None:
+            self.server.scene.set_up_direction(gui_up.value)
+
         with self.server.gui.add_folder(
             "Stats", visible=self.mode == "training"
         ) as self._stats_folder:
