@@ -27,6 +27,18 @@ def _get_rel_paths(path_dir: str) -> List[str]:
     return paths
 
 
+def _scale_images(image_dir: str, factor: int):
+    """Scale images in a directory, save to a new directory."""
+    image_files = _get_rel_paths(image_dir)
+    new_dir = image_dir + f"_{factor}"
+    if not os.path.exists(new_dir):
+        os.makedirs(new_dir)
+    for f in image_files:
+        image = imageio.imread(os.path.join(image_dir, f))
+        image = cv2.resize(image, (image.shape[1] // factor, image.shape[0] // factor))
+        imageio.imsave(os.path.join(new_dir, f), image)
+
+
 class Parser:
     """COLMAP parser."""
 
@@ -89,7 +101,8 @@ class Parser:
                 params = np.empty(0, dtype=np.float32)
                 camtype = "perspective"
             if type_ == 2 or type_ == "SIMPLE_RADIAL":
-                params = np.array([cam.k1], dtype=np.float32)
+                # params = np.array([cam.k1], dtype=np.float32)
+                params = np.empty(0, dtype=np.float32)
                 camtype = "perspective"
             elif type_ == 3 or type_ == "RADIAL":
                 params = np.array([cam.k1, cam.k2, 0.0, 0.0], dtype=np.float32)
@@ -143,7 +156,11 @@ class Parser:
         image_dir = os.path.join(data_dir, "images" + image_dir_suffix)
         for d in [image_dir, colmap_image_dir]:
             if not os.path.exists(d):
-                raise ValueError(f"Image folder {d} does not exist.")
+                # scale images
+                print(
+                    f"Scaling images in {colmap_image_dir} by {factor}, saving to {image_dir}..."
+                )
+                _scale_images(colmap_image_dir, factor=factor)
 
         # Downsampled images may have different names vs images used for COLMAP,
         # so we need to map between the two sorted lists of files.
