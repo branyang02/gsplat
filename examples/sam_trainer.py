@@ -983,7 +983,7 @@ class Runner:
 
     @torch.no_grad()
     def _viewer_render_fn(
-        self, camera_state: nerfview.CameraState, img_wh: Tuple[int, int]
+        self, camera_state: nerfview.CameraState, img_wh: Tuple[int, int], **kwargs
     ):
         """Callable function for the viewer."""
         W, H = img_wh
@@ -999,6 +999,7 @@ class Runner:
             height=H,
             sh_degree=self.cfg.sh_degree,  # active all SH degrees
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
+            **kwargs,
         )  # [1, H, W, 3]
         return render_colors[0].cpu().numpy()
 
