@@ -175,7 +175,7 @@ class Renderer:
             height=H,
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
             feature_embeds=feature_embeds,
-            segment=True,
+            # segment=True,
             **kwargs,
         )  # [1, H, W, 3]
         render_colors = render_colors[..., :3]
