@@ -67,13 +67,13 @@ class PreProcessor:
             pin_memory=True,
         )
 
+        for i, batch in enumerate(tqdm.tqdm(trainloader)):
+            torch.save(batch, f"{train_dir}/{i}.pt")
+
         # Explicitly delete trainloader and batches
         del trainloader
         del self.trainset
         torch.cuda.empty_cache()  # If using GPU
-
-        for i, batch in enumerate(tqdm.tqdm(trainloader)):
-            torch.save(batch, f"{train_dir}/{i}.pt")
 
         valloader = torch.utils.data.DataLoader(
             self.valset,
