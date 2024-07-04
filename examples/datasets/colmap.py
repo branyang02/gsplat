@@ -323,7 +323,8 @@ class Dataset:
 
         if self.embed_dim is not None:
             if not self.kwargs["disable_sam"]:
-                point_feature, mask = self.processor.process(image)
+                feature_level = self.kwargs["feature_level"]
+                point_feature, mask = self.processor.process(image, feature_level)
 
                 point_feature = point_feature.permute(1, 2, 0)
                 image = torch.from_numpy(image).float().to(point_feature.device)

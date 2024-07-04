@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 import tqdm
@@ -21,6 +21,9 @@ class Config:
     sam_ckpt: str = "ckpts/sam_vit_h_4b8939.pth"
     disable_sam: bool = False
     num_workers: int = 4
+    feature_level: Literal["default", "large", "medium", "small", "l", "m", "s"] = (
+        "default"
+    )
 
 
 class PreProcessor:
@@ -48,6 +51,7 @@ class PreProcessor:
             sam_model=cfg.sam_model,
             sam_ckpt=cfg.sam_ckpt,
             disable_sam=cfg.disable_sam,
+            feature_level=cfg.feature_level,
         )
         self.valset = Dataset(
             self.parser,
@@ -56,6 +60,7 @@ class PreProcessor:
             sam_model=cfg.sam_model,
             sam_ckpt=cfg.sam_ckpt,
             disable_sam=cfg.disable_sam,
+            feature_level=cfg.feature_level,
         )
 
         trainloader = torch.utils.data.DataLoader(

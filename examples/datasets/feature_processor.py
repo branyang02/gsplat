@@ -224,7 +224,20 @@ class FeatureProcessor:
 
         return clip_embeds, seg_map
 
-    def process(self, image: np.ndarray, feature_level: int = 0):
+    def process(self, image: np.ndarray, feature_level: int or str = 0):  # type: ignore
+
+        if isinstance(feature_level, str):
+            if feature_level == "default":
+                feature_level = 0
+            elif feature_level == "s" or feature_level == "small":
+                feature_level = 1
+            elif feature_level == "m" or feature_level == "medium":
+                feature_level = 2
+            elif feature_level == "l" or feature_level == "large":
+                feature_level = 3
+            else:
+                raise ValueError("feature_level=", feature_level)
+
         # image (H, W, 3)
         height, width = image.shape[:2]
 
