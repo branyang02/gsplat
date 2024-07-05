@@ -161,6 +161,7 @@ class Renderer:
 
         tok_phrase = self.clip.tokenizer(feature_query).to(self.cfg.device)
         feature_embeds = self.clip.model.encode_text(tok_phrase)  # [1, 512]
+        feature_embeds /= feature_embeds.norm(dim=-1, keepdim=True)
 
         W, H = img_wh
         c2w = camera_state.c2w
@@ -177,9 +178,21 @@ class Renderer:
             feature_embeds=feature_embeds,
             # segment=True,
             **kwargs,
-        )  # [1, H, W, 3]
-        render_colors = render_colors[..., :3]
-        return render_colors[0].cpu().numpy()
+        )
+        colors = render_colors[..., :3]  # [1, H, W, 3]
+        render_features = render_colors[..., 3:]  # [1, H, W, 512]
+
+        feature_embeds = feature_embeds.view(1, 1, 1, 512)
+        cosine_similarity = F.cosine_similarity(render_features, feature_embeds, dim=-1)
+
+        threshold = kwargs.get("feature_similarity_threshold", 0.3)
+
+        mask = cosine_similarity > threshold
+
+        new_color = torch.tensor([1.0, 0.0, 0.0], device=colors.device)
+        colors[mask] = new_color
+
+        return colors[0].cpu().numpy()
 
 
 if __name__ == "__main__":
