@@ -1,5 +1,7 @@
 # Installation
 
+tested on Python 3.9.19
+
 ```
 git clone --recurse-submodules https://github.com/branyang02/gsplat.git
 ```
