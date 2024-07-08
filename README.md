@@ -22,7 +22,7 @@ Additionally, download SAM checkpoint and COLMAP data.
 
 # Usage
 
-Scripts are provided in the `example` directory.
+Scripts are provided in the `3d_semantic` directory.
 
 1. Preprocess data
 
