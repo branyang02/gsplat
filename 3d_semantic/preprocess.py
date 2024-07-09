@@ -67,7 +67,7 @@ class PreProcessor:
         # Explicitly delete trainloader and batches
         del trainloader
         del self.trainset
-        torch.cuda.empty_cache() 
+        torch.cuda.empty_cache()
 
         valloader = torch.utils.data.DataLoader(
             self.valset,
