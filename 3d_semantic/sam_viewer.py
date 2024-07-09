@@ -1,17 +1,16 @@
 from dataclasses import dataclass
-from fast_pytorch_kmeans import KMeans
 import math
 import time
 from typing import Dict, Literal, Tuple
 
 import tyro
 
-from examples.datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
+from datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
 import nerfview
 import torch
 from torch import Tensor
 import viser
-from examples.utils import SAMOptModule
+from utils import SAMOptModule
 from gsplat.rendering import rasterization
 
 from gsplat._helper import *
@@ -107,28 +106,6 @@ class Renderer:
         )
         colors = colors + self.splats["colors"]
         colors = torch.sigmoid(colors)
-
-        ## TODO: create color clone that only displays feature colors
-        if kwargs.get("segment", False):
-            if self.feature_colors is None:
-                # run K means on features
-                self.feature_colors = colors.clone()
-                num_clusters = 20
-                kmeans = KMeans(
-                    n_clusters=num_clusters,
-                    mode="cosine",
-                    verbose=1,
-                    max_iter=1000,
-                )
-                labels = kmeans.fit_predict(self.feature_colors.squeeze(0))
-                palette = (
-                    torch.randint(0, 256, (num_clusters, 3)).float().cuda() / 255.0
-                )
-                for cluster in range(num_clusters):
-                    cluster_indices = (labels == cluster).nonzero(as_tuple=True)[0]
-                    self.feature_colors[0, cluster_indices] = palette[cluster]
-
-            colors = self.feature_colors
 
         features = features + self.splats["features"]
         colors_with_features = torch.cat([colors, features], dim=-1)
