@@ -262,7 +262,9 @@ class FeatureProcessor:
             seg_map_tensor.append(torch.from_numpy(v))
         seg_map = torch.stack(seg_map_tensor, dim=0)
 
-        y, x = torch.meshgrid(torch.arange(0, height), torch.arange(0, width))
+        y, x = torch.meshgrid(
+            torch.arange(0, height), torch.arange(0, width), indexing="ij"
+        )
         x = x.reshape(-1, 1)  # torch.Size([404301, 1])
         y = y.reshape(-1, 1)
         seg = seg_map[:, y, x].squeeze(-1).long()

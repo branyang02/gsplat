@@ -479,8 +479,11 @@ class Runner:
                 colors, features = renders[..., :3], renders[..., 3:]
             elif renders.shape[-1] == 3 + self.feature_dim + 1:
                 assert cfg.depth_loss == True
-                colors, features = renders[..., :3], renders[..., 3:3+self.feature_dim]
-                depths = renders[..., 3+self.feature_dim:]
+                colors, features = (
+                    renders[..., :3],
+                    renders[..., 3 : 3 + self.feature_dim],
+                )
+                depths = renders[..., 3 + self.feature_dim :]
             else:
                 raise ValueError(f"Invalid number of channels: {renders.shape[-1]}")
 
