@@ -47,6 +47,9 @@ try:
 except ImportError:
     # if failed, try with JIT compilation
     if cuda_toolkit_available():
+        Console().print(
+            "[green]gsplat: CUDA toolkit found. Compiling CUDA kernels...[/green]"
+        )
         name = "gsplat_cuda"
         build_dir = _get_build_directory(name, verbose=False)
         current_dir = os.path.dirname(os.path.abspath(__file__))
