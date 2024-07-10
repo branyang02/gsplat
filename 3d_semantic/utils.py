@@ -116,7 +116,6 @@ class SAMOptModule(torch.nn.Module):
         return colors, features
 
 
-##### TODO: Change the name of this class
 class AppearanceOptModule(torch.nn.Module):
     """Appearance optimization module."""
 
