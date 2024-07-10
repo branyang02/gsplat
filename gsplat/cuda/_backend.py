@@ -77,13 +77,17 @@ except ImportError:
         ):
             # If the build exists, we assume the extension has been built
             # and we can load it.
-            _C = load(
-                name=name,
-                sources=sources,
-                extra_cflags=extra_cflags,
-                extra_cuda_cflags=extra_cuda_cflags,
-                extra_include_paths=extra_include_paths,
-            )
+            with Console().status(
+                f"[bold yellow]gsplat: Loading existing CUDA extension",
+                spinner="bouncingBall",
+            ):
+                _C = load(
+                    name=name,
+                    sources=sources,
+                    extra_cflags=extra_cflags,
+                    extra_cuda_cflags=extra_cuda_cflags,
+                    extra_include_paths=extra_include_paths,
+                )
         else:
             # Build from scratch. Remove the build directory just to be safe: pytorch jit might stuck
             # if the build directory exists with a lock file in it.
