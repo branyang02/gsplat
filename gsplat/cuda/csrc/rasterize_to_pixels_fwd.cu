@@ -277,7 +277,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> rasterize_to_pixels_fwd_
         __GS__CALL_(256)
         __GS__CALL_(257)
         __GS__CALL_(512)
-        __GS__CALL_(513)
+        __GS__CALL_(515)
     default:
         AT_ERROR("Unsupported number of channels: ", channels);
     }
