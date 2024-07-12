@@ -10,6 +10,7 @@ from .cuda._wrapper import (
     isect_offset_encode,
     isect_tiles,
     rasterize_to_pixels,
+    rasterize_with_mapping,
     spherical_harmonics,
 )
 
@@ -30,13 +31,13 @@ def rasterization(
     eps2d: float = 0.3,
     sh_degree: Optional[int] = None,
     packed: bool = True,
-    tile_size: int = 16,
+    tile_size: int = 8, # default: 16
     backgrounds: Optional[Tensor] = None,
     render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
     sparse_grad: bool = False,
     absgrad: bool = False,
     rasterize_mode: Literal["classic", "antialiased"] = "classic",
-    channel_chunk: int = 515,
+    channel_chunk: int = 516,
     **kwargs,
 ) -> Tuple[Tensor, Tensor, Dict]:
     """Rasterize a set of 3D Gaussians (N) to a batch of image planes (C).
@@ -339,39 +340,71 @@ def rasterization(
                 if backgrounds is not None
                 else None
             )
-            render_colors_, render_alphas_ = rasterize_to_pixels(
+            if kwargs.get("compute_mapping", False):
+                render_colors_, render_alphas_, mapping = rasterize_with_mapping(
+                    means2d,
+                    conics,
+                    colors_chunk,
+                    opacities,
+                    width,
+                    height,
+                    tile_size,
+                    isect_offsets,
+                    flatten_ids,
+                    backgrounds=backgrounds_chunk,
+                    packed=packed,
+                    absgrad=absgrad,
+                )
+            else:
+                render_colors_, render_alphas_ = rasterize_to_pixels(
+                    means2d,
+                    conics,
+                    colors_chunk,
+                    opacities,
+                    width,
+                    height,
+                    tile_size,
+                    isect_offsets,
+                    flatten_ids,
+                    backgrounds=backgrounds_chunk,
+                    packed=packed,
+                    absgrad=absgrad,
+                )
+            render_colors.append(render_colors_)
+            render_alphas.append(render_alphas_)
+        render_colors = torch.cat(render_colors, dim=-1)
+        render_alphas = render_alphas[0]  # discard the rest
+    else:
+        if kwargs.get("compute_mapping", False):
+            render_colors, render_alphas, mapping = rasterize_with_mapping(
                 means2d,
                 conics,
-                colors_chunk,
+                colors,
                 opacities,
                 width,
                 height,
                 tile_size,
                 isect_offsets,
                 flatten_ids,
-                backgrounds=backgrounds_chunk,
+                backgrounds=backgrounds,
                 packed=packed,
                 absgrad=absgrad,
             )
-            render_colors.append(render_colors_)
-            render_alphas.append(render_alphas_)
-        render_colors = torch.cat(render_colors, dim=-1)
-        render_alphas = render_alphas[0]  # discard the rest
-    else:
-        render_colors, render_alphas = rasterize_to_pixels(
-            means2d,
-            conics,
-            colors,
-            opacities,
-            width,
-            height,
-            tile_size,
-            isect_offsets,
-            flatten_ids,
-            backgrounds=backgrounds,
-            packed=packed,
-            absgrad=absgrad,
-        )
+        else:
+            render_colors, render_alphas = rasterize_to_pixels(
+                means2d,
+                conics,
+                colors,
+                opacities,
+                width,
+                height,
+                tile_size,
+                isect_offsets,
+                flatten_ids,
+                backgrounds=backgrounds,
+                packed=packed,
+                absgrad=absgrad,
+            )
     if render_mode in ["ED", "RGB+ED"]:
         # normalize the accumulated depth to get the expected depth
         render_colors = torch.cat(
@@ -399,6 +432,7 @@ def rasterization(
         "width": width,
         "height": height,
         "tile_size": tile_size,
+        "mapping": mapping if kwargs.get("compute_mapping", False) else None,
     }
     return render_colors, render_alphas, meta
 

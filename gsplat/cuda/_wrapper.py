@@ -368,6 +368,136 @@ def isect_offset_encode(
     )
 
 
+def rasterize_with_mapping(
+    means2d: Tensor,  # [C, N, 2] or [nnz, 2]
+    conics: Tensor,  # [C, N, 3] or [nnz, 3]
+    colors: Tensor,  # [C, N, channels] or [nnz, channels]
+    opacities: Tensor,  # [C, N] or [nnz]
+    image_width: int,
+    image_height: int,
+    tile_size: int,
+    isect_offsets: Tensor,  # [C, tile_height, tile_width]
+    flatten_ids: Tensor,  # [n_isects]
+    backgrounds: Optional[Tensor] = None,  # [C, channels]
+    packed: bool = False,
+    absgrad: bool = False,
+) -> Tuple[Tensor, Tensor, Tensor]:
+    """Rasterizes Gaussians to pixels with mapping from pixel space to Gaussian space
+
+    Args:
+        means2d: Projected Gaussian means. [C, N, 2] if packed is False, [nnz, 2] if packed is True.
+        conics: Inverse of the projected covariances with only upper triangle values. [C, N, 3] if packed is False, [nnz, 3] if packed is True.
+        colors: Gaussian colors or ND features. [C, N, channels] if packed is False, [nnz, channels] if packed is True.
+        opacities: Gaussian opacities that support per-view values. [C, N] if packed is False, [nnz] if packed is True.
+        image_width: Image width.
+        image_height: Image height.
+        tile_size: Tile size.
+        isect_offsets: Intersection offsets outputs from `isect_offset_encode()`. [C, tile_height, tile_width]
+        flatten_ids: The global flatten indices in [C * N] or [nnz] from  `isect_tiles()`. [n_isects]
+        backgrounds: Background colors. [C, channels]. Default: None.
+        packed: If True, the input tensors are expected to be packed with shape [nnz, ...]. Default: False.
+        absgrad: If True, the backward pass will compute a `.absgrad` attribute for `means2d`. Default: False.
+
+    Returns:
+        A tuple:
+
+        - **Rendered colors**. [C, image_height, image_width, channels]
+        - **Rendered alphas**. [C, image_height, image_width, 1]
+    """
+
+    C = isect_offsets.size(0)
+    device = means2d.device
+    if packed:
+        nnz = means2d.size(0)
+        assert means2d.shape == (nnz, 2), means2d.shape
+        assert conics.shape == (nnz, 3), conics.shape
+        assert colors.shape[0] == nnz, colors.shape
+        assert opacities.shape == (nnz,), opacities.shape
+    else:
+        N = means2d.size(1)
+        assert means2d.shape == (C, N, 2), means2d.shape
+        assert conics.shape == (C, N, 3), conics.shape
+        assert colors.shape[:2] == (C, N), colors.shape
+        assert opacities.shape == (C, N), opacities.shape
+    if backgrounds is not None:
+        assert backgrounds.shape == (C, colors.shape[-1]), backgrounds.shape
+        backgrounds = backgrounds.contiguous()
+
+    # Pad the channels to the nearest supported number if necessary
+    channels = colors.shape[-1]
+    if channels > 516 or channels == 0:
+        # TODO: maybe worth to support zero channels?
+        raise ValueError(f"Unsupported number of color channels: {channels}")
+    if channels not in (
+        1,
+        2,
+        3,
+        4,
+        5,
+        8,
+        9,
+        16,
+        17,
+        32,
+        33,
+        64,
+        65,
+        128,
+        129,
+        256,
+        257,
+        512,
+        515,
+        516,
+    ):
+        padded_channels = (1 << (channels - 1).bit_length()) - channels
+        colors = torch.cat(
+            [
+                colors,
+                torch.zeros(*colors.shape[:-1], padded_channels, device=device),
+            ],
+            dim=-1,
+        )
+        if backgrounds is not None:
+            backgrounds = torch.cat(
+                [
+                    backgrounds,
+                    torch.zeros(
+                        *backgrounds.shape[:-1], padded_channels, device=device
+                    ),
+                ],
+                dim=-1,
+            )
+    else:
+        padded_channels = 0
+
+    tile_height, tile_width = isect_offsets.shape[1:3]
+    assert (
+        tile_height * tile_size >= image_height
+    ), f"Assert Failed: {tile_height} * {tile_size} >= {image_height}"
+    assert (
+        tile_width * tile_size >= image_width
+    ), f"Assert Failed: {tile_width} * {tile_size} >= {image_width}"
+
+    render_colors, render_alphas, mapping = _RasterizeWithMapping.apply(
+        means2d.contiguous(),
+        conics.contiguous(),
+        colors.contiguous(),
+        opacities.contiguous(),
+        backgrounds,
+        image_width,
+        image_height,
+        tile_size,
+        isect_offsets.contiguous(),
+        flatten_ids.contiguous(),
+        absgrad,
+    )
+
+    if padded_channels > 0:
+        render_colors = render_colors[..., :-padded_channels]
+    return render_colors, render_alphas, mapping
+
+
 def rasterize_to_pixels(
     means2d: Tensor,  # [C, N, 2] or [nnz, 2]
     conics: Tensor,  # [C, N, 3] or [nnz, 3]
@@ -425,7 +555,7 @@ def rasterize_to_pixels(
 
     # Pad the channels to the nearest supported number if necessary
     channels = colors.shape[-1]
-    if channels > 515 or channels == 0:
+    if channels > 516 or channels == 0:
         # TODO: maybe worth to support zero channels?
         raise ValueError(f"Unsupported number of color channels: {channels}")
     if channels not in (
@@ -448,6 +578,7 @@ def rasterize_to_pixels(
         257,
         512,
         515,
+        516,
     ):
         padded_channels = (1 << (channels - 1).bit_length()) - channels
         colors = torch.cat(
@@ -801,6 +932,42 @@ class _FullyFusedProjection(torch.autograd.Function):
             None,
             None,
         )
+
+
+class _RasterizeWithMapping(torch.autograd.Function):
+
+    @staticmethod
+    def forward(
+        ctx,
+        means2d: Tensor,  # [C, N, 2]
+        conics: Tensor,  # [C, N, 3]
+        colors: Tensor,  # [C, N, D]
+        opacities: Tensor,  # [C, N]
+        backgrounds: Tensor,  # [C, D], Optional
+        width: int,
+        height: int,
+        tile_size: int,
+        isect_offsets: Tensor,  # [C, tile_height, tile_width]
+        flatten_ids: Tensor,  # [n_isects]
+        absgrad: bool,
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        render_colors, render_alphas, last_ids, mapping = _make_lazy_cuda_func(
+            "rasterize_with_mapping"
+        )(
+            means2d,
+            conics,
+            colors,
+            opacities,
+            backgrounds,
+            width,
+            height,
+            tile_size,
+            isect_offsets,
+            flatten_ids,
+        )
+        # double to float
+        render_alphas = render_alphas.float()
+        return render_colors, render_alphas, mapping
 
 
 class _RasterizeToPixels(torch.autograd.Function):

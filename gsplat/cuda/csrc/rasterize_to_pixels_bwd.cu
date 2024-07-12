@@ -396,6 +396,7 @@ rasterize_to_pixels_bwd_tensor(
         __GS__CALL_(257)
         __GS__CALL_(512)
         __GS__CALL_(515)
+        __GS__CALL_(516)
     default:
         AT_ERROR("Unsupported number of channels: ", COLOR_DIM);
     }
