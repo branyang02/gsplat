@@ -1,28 +1,23 @@
-from dataclasses import dataclass
 import math
-import time
-from typing import Dict, Literal, Tuple
+from typing import Dict, Tuple
 
-import tyro
 
-from datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
+from semantic_gen.datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
 import nerfview
 import torch
 from torch import Tensor
-import viser
-from utils import SAMOptModule
+from semantic_gen.utils import SAMOptModule
 from gsplat.rendering import rasterization
 
 from gsplat._helper import *
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 import torch
 
 ckpt = torch.load(
-    "results/nerf_dff_dataset_depth/ckpts/ckpt_29999.pt", map_location="cuda"
+    "../semantic_gen/results/nerf_dff_dataset_depth/ckpts/ckpt_29999.pt", map_location="cuda"
 )
 
 
@@ -179,7 +174,7 @@ render_image, features, info, meta = viewer_render_fn(
 )
 
 
-plt.imsave("render_image.png", render_image)
+plt.imsave("images/render_image.png", render_image)
 
 ### move GSs
 print("mapping size: ", info["mapping"].shape)
@@ -200,7 +195,6 @@ print(torch.min(filtered_mapping))
 
 # move GSs
 splats["means3d"][filtered_mapping, 0] = splats["means3d"][filtered_mapping, 0] + 0.5
-# splats["colors"][filtered_mapping, :3] = torch.tensor([1.0, 0.0, 0.0], device=splats["colors"].device)
 
 render_image, features, info, meta = viewer_render_fn(
     camera_state=inputs["camera_state"],
@@ -208,8 +202,8 @@ render_image, features, info, meta = viewer_render_fn(
     feature_query=query,
     feature_similarity_threshold=0.28,
     compute_mapping=False,
-    segment=True,
+    segment=False,
 )
 
 
-plt.imsave("moved_image.png", render_image)
+plt.imsave("images/moved_image.png", render_image)
