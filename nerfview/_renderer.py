@@ -146,7 +146,12 @@ class Renderer(threading.Thread):
                         img_wh,
                         feature_query=self.viewer._feature_query.value,
                         feature_similarity_threshold=self.viewer._feature_similarity_threshold.value,
-                    )  ##### added feature_query kwargs
+                        move_object=self.viewer._move_object,
+                        move_x=self.viewer._move_x.value,
+                        move_y=self.viewer._move_y.value,
+                        move_z=self.viewer._move_z.value,
+                    )
+                    self.viewer._move_object = False
                     if isinstance(rendered, tuple):
                         img, depth = rendered
                     else:

@@ -147,17 +147,50 @@ class Viewer(object):
         with self.server.gui.add_folder(
             "Feature Visualization"
         ) as self._feature_folder:
+            # Textbox
             self._feature_query = self.server.gui.add_text(
                 "Text",
                 initial_value="plant",
             )
+            # Button to find features
             self._feature_vis_button = self.server.gui.add_button("Find Features")
             self._feature_vis_button.on_click(self.rerender)
 
+            # Button to clear features
+            clear_feature_vis_button = self.server.gui.add_button(
+                "Clear Features", color="red"
+            )
+
+            @clear_feature_vis_button.on_click
+            def _(_):
+                self._feature_query.value = ""
+                self.rerender(_)
+
+            # Slider for similarity threshold
             self._feature_similarity_threshold = self.server.gui.add_slider(
                 "Similarity Threshold", min=0.0, max=1.0, step=0.01, initial_value=0.3
             )
             self._feature_similarity_threshold.on_update(self.rerender)
+
+            # X axis
+            self._move_x = self.server.gui.add_slider(
+                "Move X", initial_value=0.0, step=0.05, min=-2.0, max=2.0
+            )
+            # Y axis
+            self._move_y = self.server.gui.add_slider(
+                "Move Y", initial_value=0.0, step=0.05, min=-2.0, max=2.0
+            )
+            # Z axis
+            self._move_z = self.server.gui.add_slider(
+                "Move Z", initial_value=0.0, step=0.05, min=-2.0, max=2.0
+            )
+            self._move_object_button = self.server.gui.add_button("Move Object")
+            self._move_object = False
+
+            @self._move_object_button.on_click
+            def _(_):
+                self._move_object = True
+                self.rerender(_)
 
     def _toggle_train_buttons(self, _):
         self._pause_train_button.visible = not self._pause_train_button.visible

@@ -65,7 +65,6 @@ __global__ void rasterize_to_pixels_fwd_kernel(
     // return if out of bounds
     // keep not rasterizing threads around for reading data
     bool inside = (i < image_height && j < image_width);
-    bool done = !inside;
 
     // have all threads in tile process the same gaussians in batches
     // first collect gaussians between range.x and range.y in batches
@@ -105,10 +104,6 @@ __global__ void rasterize_to_pixels_fwd_kernel(
     S pix_out[COLOR_DIM] = {0.f};
     for (uint32_t b = 0; b < num_batches; ++b) {
         // resync all threads before beginning next batch
-        // end early if entire tile is done
-        if (__syncthreads_count(done) >= block_size) {
-            break;
-        }
 
         // each thread fetch 1 gaussian from front to back
         // index of gaussian to load
@@ -128,7 +123,7 @@ __global__ void rasterize_to_pixels_fwd_kernel(
 
         // process gaussians in the current batch for this pixel
         uint32_t batch_size = min(block_size, range_end - batch_start);
-        for (uint32_t t = 0; (t < batch_size) && !done; ++t) {
+        for (uint32_t t = 0; t < batch_size; ++t) {
             const vec3<S> conic = conic_batch[t];
             const vec3<S> xy_opac = xy_opacity_batch[t];
             const S opac = xy_opac.z;
@@ -139,12 +134,6 @@ __global__ void rasterize_to_pixels_fwd_kernel(
             S alpha = min(0.999f, opac * __expf(-sigma));
             if (sigma < 0.f || alpha < 1.f / 255.f) {
                 continue;
-            }
-
-            const S next_T = T * (1.0f - alpha);
-            if (next_T <= 1e-4) { // this pixel is done: exclusive
-                done = true;
-                break;
             }
 
             int32_t g = id_batch[t];
@@ -163,7 +152,7 @@ __global__ void rasterize_to_pixels_fwd_kernel(
                 ++influence_count;
             }
 
-            T = next_T;
+            T *= (1.0f - alpha);
         }
     }
 

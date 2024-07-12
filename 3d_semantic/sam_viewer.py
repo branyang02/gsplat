@@ -3,6 +3,7 @@ import math
 import time
 from typing import Dict, Literal, Tuple
 
+import copy
 import tyro
 
 from datasets.clip import OpenCLIPNetwork, OpenCLIPNetworkConfig
@@ -36,6 +37,7 @@ class Renderer:
             ckpt["sam_module"]
         )  # TODO: check sh_degree logic
         self.splats = ckpt["splats"]
+        self.ori_splats = ckpt["splats"].copy()
 
         # clip
         self.clip = OpenCLIPNetwork(OpenCLIPNetworkConfig)
@@ -133,30 +135,32 @@ class Renderer:
     def viewer_render_fn(
         self, camera_state: nerfview.CameraState, img_wh: Tuple[int, int], **kwargs
     ):
-        feature_query = kwargs.get("feature_query", None)
-        print("feature_query: ", feature_query)
-
-        tok_phrase = self.clip.tokenizer(feature_query).to(self.cfg.device)
-        feature_embeds = self.clip.model.encode_text(tok_phrase)  # [1, 512]
-        feature_embeds /= feature_embeds.norm(dim=-1, keepdim=True)
-
         W, H = img_wh
         c2w = camera_state.c2w
         K = camera_state.get_K(img_wh)
         c2w = torch.from_numpy(c2w).float().to(self.cfg.device)
         K = torch.from_numpy(K).float().to(self.cfg.device)
 
-        render_colors, _, _ = self.rasterize_splats(
+        render_colors, _, info = self.rasterize_splats(
             camtoworlds=c2w[None],
             Ks=K[None],
             width=W,
             height=H,
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
-            feature_embeds=feature_embeds,
-            # segment=True,
+            compute_mapping=kwargs.get("move_object", False),
             **kwargs,
         )
         colors = render_colors[..., :3]  # [1, H, W, 3]
+
+        feature_query = kwargs.get("feature_query", None)
+        if feature_query is None or feature_query == "":
+            return colors[0].cpu().numpy()
+
+        print("feature_query: ", feature_query)
+        tok_phrase = self.clip.tokenizer(feature_query).to(self.cfg.device)
+        feature_embeds = self.clip.model.encode_text(tok_phrase)  # [1, 512]
+        feature_embeds /= feature_embeds.norm(dim=-1, keepdim=True)
+
         render_features = render_colors[..., 3:]  # [1, H, W, 512]
 
         feature_embeds = feature_embeds.view(1, 1, 1, 512)
@@ -166,10 +170,33 @@ class Renderer:
 
         mask = cosine_similarity > threshold
 
-        new_color = torch.tensor([1.0, 0.0, 0.0], device=colors.device)
-        colors[mask] = new_color
+        if kwargs.get("move_object", False):
+            self.move_objects(mask, info["mapping"], **kwargs)
+        else:
+            new_color = torch.tensor([1.0, 0.0, 0.0], device=colors.device)
+            colors[mask] = new_color
 
         return colors[0].cpu().numpy()
+
+    def move_objects(self, mask, mapping, **kwargs):
+        # reset scene before moving objects
+        self.splats = copy.deepcopy(self.ori_splats)
+
+        expanded_mask = mask.unsqueeze(-1).expand_as(mapping)
+        selected_mapping = mapping[expanded_mask].view(-1, mapping.shape[-1])
+        filtered_mapping = torch.unique(selected_mapping.view(-1))[
+            torch.unique(selected_mapping.view(-1)) != -1
+        ]
+
+        self.splats["means3d"][filtered_mapping, 0] = (
+            self.splats["means3d"][filtered_mapping, 0] + kwargs["move_x"]
+        )
+        self.splats["means3d"][filtered_mapping, 1] = (
+            self.splats["means3d"][filtered_mapping, 1] + kwargs["move_y"]
+        )
+        self.splats["means3d"][filtered_mapping, 2] = (
+            self.splats["means3d"][filtered_mapping, 2] + kwargs["move_z"]
+        )
 
 
 if __name__ == "__main__":
