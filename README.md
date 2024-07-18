@@ -1,46 +1,68 @@
 # Installation
 
-tested on Python 3.9.19
+tested on Python 3.9.19, CUDA 11.8
+
+1. Clone the repository
 
 ```
 git clone --recurse-submodules https://github.com/branyang02/gsplat.git
+cd gsplat
 ```
 
-Install `gsplat` locally
+2. Create a new conda environment
+
+```
+conda env create -f environment.yml && conda activaate semantic_gen
+```
+
+3. Install `gsplat` and `segment-anything-langsplat`
 
 ```
 pip install -e .
-```
-
-Install `segment-anything-langsplat`
-
-```
 pip install -e segment-anything-langsplat
 ```
 
-Additionally, download SAM checkpoint and COLMAP data.
+4. Navigate to `semantic_gen` directory and install dependencies
+
+```
+cd 3d_semantic && pip install -r requirements.txt
+```
+
+5. Download SAM checkpoint
+
+```
+mkdir -p ckpts && wget -P ckpts https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+```
 
 # Usage
 
-Scripts are provided in the `3d_semantic` directory.
+All scripts should be run from the `semantic_gen` directory.
 
-1. Preprocess data
+Download [Mip-NeRF 360](https://jonbarron.info/mipnerf360/) dataset:
+
+```
+python datasets/download_dataset.py
+```
+
+## Preprocess Data
+
+First, we extract CLIP embeddings for the training and validation sets.
 
 ```
 python preprocess.py --data_dir data/[dataset_dir] --sam_ckpt [sam_ckpt] --num_workers 8
 ```
 
-This saves the precomputed embeddings in data/[dataset_dir]/trainset and data/[dataset_dir]/valset.
+Adjust `num_workers` based on your GPU's capacity. Data are processed in parallel to speed up the process.
 
-Note: adjust `num_workers` based on your machine's capacity.
+This saves the precomputed embeddings in `data/[dataset_dir]/trainset` and `data/[dataset_dir]/valset`.
 
-2. Train
+## Train
 
 ```
 python sam_trainer.py --data_dir data/[dataset_dir] --result_dir results/[dataset_dir]
 ```
 
-3. Visualize
+## Evaluate and Visualize
 
 ```
 python sam_viewer.py --ckpt results/[dataset_dir]/ckpts/[ckpt]
