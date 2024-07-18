@@ -127,6 +127,7 @@ class Renderer:
             sparse_grad=False,
             rasterize_mode="classic",
             sh_degree=None,
+            channel_chunk=516,  # Render all channels at once
             **kwargs,
         )
         return render_colors, render_alphas, info

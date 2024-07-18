@@ -31,13 +31,13 @@ def rasterization(
     eps2d: float = 0.3,
     sh_degree: Optional[int] = None,
     packed: bool = True,
-    tile_size: int = 8, # default: 16
+    tile_size: int = 8,  # default: 16
     backgrounds: Optional[Tensor] = None,
     render_mode: Literal["RGB", "D", "ED", "RGB+D", "RGB+ED"] = "RGB",
     sparse_grad: bool = False,
     absgrad: bool = False,
     rasterize_mode: Literal["classic", "antialiased"] = "classic",
-    channel_chunk: int = 516,
+    channel_chunk: int = 32,
     **kwargs,
 ) -> Tuple[Tensor, Tensor, Dict]:
     """Rasterize a set of 3D Gaussians (N) to a batch of image planes (C).
@@ -341,20 +341,7 @@ def rasterization(
                 else None
             )
             if kwargs.get("compute_mapping", False):
-                render_colors_, render_alphas_, mapping = rasterize_with_mapping(
-                    means2d,
-                    conics,
-                    colors_chunk,
-                    opacities,
-                    width,
-                    height,
-                    tile_size,
-                    isect_offsets,
-                    flatten_ids,
-                    backgrounds=backgrounds_chunk,
-                    packed=packed,
-                    absgrad=absgrad,
-                )
+                raise NotImplementedError("Mapping is not supported in chunk mode.")
             else:
                 render_colors_, render_alphas_ = rasterize_to_pixels(
                     means2d,
