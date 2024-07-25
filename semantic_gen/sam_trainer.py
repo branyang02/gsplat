@@ -123,14 +123,10 @@ class Config:
     # Add noise to camera extrinsics. This is only to test the camera pose optimization.
     pose_noise: float = 0.0
 
-    # Enable appearance optimization. (experimental)
-    app_opt: bool = True
-    # Appearance embedding dimension
-    app_embed_dim: Optional[int] = None
-    # Learning rate for appearance optimization
-    app_opt_lr: float = 1e-3
-    # Regularization for appearance optimization as weight decay
-    app_opt_reg: float = 1e-6
+    # Learning rate for SAM optimization
+    sam_opt_lr: float = 1e-3
+    # Regularization for SAM optimization as weight decay
+    sam_opt_reg: float = 1e-6
 
     # Enable depth loss. (experimental)
     depth_loss: bool = False
@@ -160,7 +156,6 @@ def create_splats_with_optimizers(
     points: Tensor,  # [N, 3]
     rgbs: Tensor,  # [N, 3]
     scene_scale: float = 1.0,
-    sh_degree: int = 3,
     init_opacity: float = 0.1,
     sparse_grad: bool = False,
     batch_size: int = 1,
@@ -184,7 +179,6 @@ def create_splats_with_optimizers(
         ("opacities", torch.nn.Parameter(opacities), 5e-2),
     ]
 
-    # features will be used for appearance and view-dependent shading
     features = torch.rand(N, feature_dim)  # [N, feature_dim]
     params.append(("features", torch.nn.Parameter(features), 2.5e-3))
     colors = torch.logit(rgbs)  # [N, 3]
@@ -236,16 +230,11 @@ class Runner:
             normalize=True,
             test_every=cfg.test_every,
         )
-        self.trainset = DynamicDataset(
-            os.path.join(cfg.data_dir, "trainset")
-        )  ##### changed
-        self.valset = DynamicDataset(
-            os.path.join(cfg.data_dir, "valset")
-        )  ##### changed
+        self.trainset = DynamicDataset(os.path.join(cfg.data_dir, "trainset"))
+        self.valset = DynamicDataset(os.path.join(cfg.data_dir, "valset"))
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
-        ##### changed: get feature_dim from trainset
         self.feature_dim = self.trainset.feature_dim
         print("Feature dim:", self.feature_dim)
 
@@ -254,7 +243,6 @@ class Runner:
             torch.from_numpy(self.parser.points).float(),
             torch.from_numpy(self.parser.points_rgb / 255.0).float(),
             scene_scale=self.scene_scale,
-            sh_degree=cfg.sh_degree,
             init_opacity=cfg.init_opa,
             sparse_grad=cfg.sparse_grad,
             batch_size=cfg.batch_size,
@@ -283,7 +271,7 @@ class Runner:
         self.sam_module = SAMOptModule(
             len(self.trainset),
             self.feature_dim,
-            cfg.app_embed_dim if cfg.app_embed_dim else self.feature_dim // 2,
+            self.feature_dim // 2,
             cfg.sh_degree,
             output_dim=self.feature_dim,  ##### added output_dim
         ).to(self.device)
@@ -297,16 +285,16 @@ class Runner:
         self.app_optimizers = [
             torch.optim.Adam(
                 self.sam_module.embeds.parameters(),
-                lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
-                weight_decay=cfg.app_opt_reg,
+                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
+                weight_decay=cfg.sam_opt_reg,
             ),
             torch.optim.Adam(
                 self.sam_module.color_head.parameters(),
-                lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
+                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
             ),
             torch.optim.Adam(
                 self.sam_module.feature_head.parameters(),
-                lr=cfg.app_opt_lr * math.sqrt(cfg.batch_size),
+                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
             ),  ##### added optimizer for feature_head
         ]
 
@@ -321,6 +309,7 @@ class Runner:
         # Viewer
         if not self.cfg.disable_viewer:
             self.server = viser.ViserServer(port=cfg.port, verbose=False)
+            self.server.request_share_url()
             self.viewer = nerfview.Viewer(
                 server=self.server,
                 render_fn=self._viewer_render_fn,
@@ -350,20 +339,18 @@ class Runner:
         opacities = torch.sigmoid(self.splats["opacities"])  # [N,]
 
         image_ids = kwargs.pop("image_ids", None)
-        if self.cfg.app_opt:
-            colors, features = self.sam_module(
-                features=self.splats["features"],
-                embed_ids=image_ids,
-                dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
-                sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
-            )
-            colors = colors + self.splats["colors"]
-            colors = torch.sigmoid(colors)
-            ##### added features
-            features = features + self.splats["features"]
-            colors = torch.cat([colors, features], -1)  # [(C,), N, 3 + feature_dim]
-        else:
-            colors = torch.cat([self.splats["sh0"], self.splats["shN"]], 1)  # [N, K, 3]
+        colors, features = self.sam_module(
+            features=self.splats["features"],
+            embed_ids=image_ids,
+            dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
+            sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
+        )
+        colors = colors + self.splats["colors"]
+        colors = torch.sigmoid(colors)
+        features = features + self.splats["features"]
+        colors_with_features = torch.cat(
+            [colors, features], -1
+        )  # [(C,), N, 3 + feature_dim]
 
         rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
         render_colors, render_alphas, info = rasterization(
@@ -371,7 +358,7 @@ class Runner:
             quats=quats,
             scales=scales,
             opacities=opacities,
-            colors=colors,
+            colors=colors_with_features,
             viewmats=torch.linalg.inv(camtoworlds),  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=width,
@@ -496,14 +483,10 @@ class Runner:
             # loss
             ##### TODO: verify the correctness of the loss function for gt_language_features.
             l1loss_colors = F.l1_loss(colors, gt_colors)  ##### changed variable name
-            l1loss_features = (
-                F.l1_loss(
-                    features * gt_language_features_mask.unsqueeze(-1),
-                    gt_language_features * gt_language_features_mask.unsqueeze(-1),
-                )
-                if cfg.app_opt
-                else 0.0
-            )  ##### added l1loss_features
+            l1loss_features = F.l1_loss(
+                features * gt_language_features_mask.unsqueeze(-1),
+                gt_language_features * gt_language_features_mask.unsqueeze(-1),
+            )
             ssimloss = 1.0 - self.ssim(
                 gt_colors.permute(0, 3, 1, 2), colors.permute(0, 3, 1, 2)
             )

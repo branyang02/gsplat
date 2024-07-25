@@ -59,7 +59,7 @@ class Renderer(threading.Thread):
         self._state: RenderState = "low_static"
         self._task: Optional[RenderTask] = None
 
-        self._target_fps = 30
+        self._target_fps = 10
         self._may_interrupt_render = False
 
         self._define_transitions()
@@ -132,7 +132,6 @@ class Renderer(threading.Thread):
             self._render_event.clear()
             task = self._task
             assert task is not None
-            #  print(self._state, task.action, self.transitions[self._state][task.action])
             if self._state == "high" and task.action == "static":
                 continue
             self._state = self.transitions[self._state][task.action]

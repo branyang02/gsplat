@@ -48,6 +48,7 @@ class Renderer:
 
     def start_server(self):
         self.server = viser.ViserServer(port=self.cfg.port, verbose=False)
+        self.server.request_share_url()
         self.viewer = nerfview.Viewer(
             server=self.server,
             render_fn=self.viewer_render_fn,
