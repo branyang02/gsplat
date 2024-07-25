@@ -54,12 +54,23 @@ class Parser:
         self.normalize = normalize
         self.test_every = test_every
 
-        colmap_dir = os.path.join(data_dir, "sparse/0/")
-        if not os.path.exists(colmap_dir):
-            colmap_dir = os.path.join(data_dir, "sparse")
-        assert os.path.exists(
-            colmap_dir
-        ), f"COLMAP directory {colmap_dir} does not exist."
+        # colmap_dir = os.path.join(data_dir, "sparse/0/")
+        # if not os.path.exists(colmap_dir):
+        #     colmap_dir = os.path.join(data_dir, "sparse")
+        # assert os.path.exists(
+        #     colmap_dir
+        # ), f"COLMAP directory {colmap_dir} does not exist."
+
+        colmap_dirs = [
+            os.path.join(data_dir, "colmap/sparse/0"),
+            os.path.join(data_dir, "sparse/0"),
+        ]
+
+        colmap_dir = next((d for d in colmap_dirs if os.path.exists(d)), None)
+
+        assert (
+            colmap_dir is not None
+        ), f"COLMAP directory does not exist in any of the checked paths: {colmap_dirs}"
 
         manager = SceneManager(colmap_dir)
         manager.load_cameras()
@@ -320,7 +331,7 @@ class Dataset:
             image = image[y : y + self.patch_size, x : x + self.patch_size]
             K[0, 2] -= x
             K[1, 2] -= y
-        
+
         feature_level = self.kwargs["feature_level"]
         point_feature, mask = self.processor.process(image, feature_level)
 
@@ -335,7 +346,7 @@ class Dataset:
             "image_id": item,  # the index of the image in the dataset
             "point_feature": mask.squeeze(0).to("cpu"),
         }
-    
+
         if self.load_depths:
             # projected points to image plane to get depths
             worldtocams = np.linalg.inv(camtoworlds)
