@@ -116,75 +116,6 @@ class SAMOptModule(torch.nn.Module):
         return colors, features
 
 
-class AppearanceOptModule(torch.nn.Module):
-    """Appearance optimization module."""
-
-    def __init__(
-        self,
-        n: int,
-        feature_dim: int,
-        embed_dim: int = 16,
-        sh_degree: int = 3,
-        mlp_width: int = 64,
-        mlp_depth: int = 2,
-        output_dim: int = 3,  ##### added output_dim
-    ):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.sh_degree = sh_degree
-        self.embeds = torch.nn.Embedding(n, embed_dim)
-        layers = []
-        layers.append(
-            torch.nn.Linear(embed_dim + feature_dim + (sh_degree + 1) ** 2, mlp_width)
-        )
-        layers.append(torch.nn.ReLU(inplace=True))
-        for _ in range(mlp_depth - 1):
-            layers.append(torch.nn.Linear(mlp_width, mlp_width))
-            layers.append(torch.nn.ReLU(inplace=True))
-        layers.append(
-            torch.nn.Linear(mlp_width, output_dim)
-        )  ##### changed from 3 to output_dim
-        self.color_head = torch.nn.Sequential(*layers)
-
-    def forward(
-        self, features: Tensor, embed_ids: Tensor, dirs: Tensor, sh_degree: int
-    ) -> Tensor:
-        """Adjust appearance based on embeddings.
-
-        Args:
-            features: (N, feature_dim)
-            embed_ids: (C,)
-            dirs: (C, N, 3)
-
-        Returns:
-            colors: (C, N, 3)
-        """
-        from gsplat.cuda._torch_impl import _eval_sh_bases_fast
-
-        C, N = dirs.shape[:2]
-        # Camera embeddings
-        if embed_ids is None:
-            embeds = torch.zeros(C, self.embed_dim, device=features.device)
-        else:
-            embeds = self.embeds(embed_ids)  # [C, D2]
-        embeds = embeds[:, None, :].expand(-1, N, -1)  # [C, N, D2]
-        # GS features
-        features = features[None, :, :].expand(C, -1, -1)  # [C, N, D1]
-        # View directions
-        dirs = F.normalize(dirs, dim=-1)  # [C, N, 3]
-        num_bases_to_use = (sh_degree + 1) ** 2
-        num_bases = (self.sh_degree + 1) ** 2
-        sh_bases = torch.zeros(C, N, num_bases, device=features.device)  # [C, N, K]
-        sh_bases[:, :, :num_bases_to_use] = _eval_sh_bases_fast(num_bases_to_use, dirs)
-        # Get colors
-        if self.embed_dim > 0:
-            h = torch.cat([embeds, features, sh_bases], dim=-1)  # [C, N, D1 + D2 + K]
-        else:
-            h = torch.cat([features, sh_bases], dim=-1)
-        colors = self.color_head(h)
-        return colors
-
-
 def rotation_6d_to_matrix(d6: Tensor) -> Tensor:
     """
     Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
@@ -245,3 +176,49 @@ def set_random_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+def batch_quaternion_multiply(q1, q2):
+    """
+    Multiply batches of quaternions.
+
+    Args:
+    - q1 (torch.Tensor): A tensor of shape [N, 4] representing the first batch of quaternions.
+    - q2 (torch.Tensor): A tensor of shape [N, 4] representing the second batch of quaternions.
+
+    Returns:
+    - torch.Tensor: The resulting batch of quaternions after applying the rotation.
+    """
+    # Calculate the product of each quaternion in the batch
+    w = (
+        q1[:, 0] * q2[:, 0]
+        - q1[:, 1] * q2[:, 1]
+        - q1[:, 2] * q2[:, 2]
+        - q1[:, 3] * q2[:, 3]
+    )
+    x = (
+        q1[:, 0] * q2[:, 1]
+        + q1[:, 1] * q2[:, 0]
+        + q1[:, 2] * q2[:, 3]
+        - q1[:, 3] * q2[:, 2]
+    )
+    y = (
+        q1[:, 0] * q2[:, 2]
+        - q1[:, 1] * q2[:, 3]
+        + q1[:, 2] * q2[:, 0]
+        + q1[:, 3] * q2[:, 1]
+    )
+    z = (
+        q1[:, 0] * q2[:, 3]
+        + q1[:, 1] * q2[:, 2]
+        - q1[:, 2] * q2[:, 1]
+        + q1[:, 3] * q2[:, 0]
+    )
+
+    # Combine into new quaternions
+    q3 = torch.stack((w, x, y, z), dim=1)
+
+    # Normalize the quaternions
+    norm_q3 = q3 / torch.norm(q3, dim=1, keepdim=True)
+
+    return norm_q3
