@@ -5,6 +5,11 @@ from semantic_gen.deformation_field.densegrid import DenseGrid
 from semantic_gen.deformation_field.hexfield import HexPlaneField
 from semantic_gen.utils import batch_quaternion_multiply
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from semantic_gen.scene_edit import Config
+
 
 def poc_fre(input_data, poc_buf):
 
@@ -15,11 +20,36 @@ def poc_fre(input_data, poc_buf):
     return input_data_emb
 
 
-class Deformation(nn.Module):
+def initialize_weights(m):
+    if isinstance(m, nn.Linear):
+        # init.constant_(m.weight, 0)
+        nn.init.xavier_uniform_(m.weight, gain=1)
+        if m.bias is not None:
+            nn.init.xavier_uniform_(m.weight, gain=1)
+            # init.constant_(m.bias, 0)
+
+
+def poc_fre(input_data, poc_buf):
+
+    input_data_emb = (input_data.unsqueeze(-1) * poc_buf).flatten(-2)
+    input_data_sin = input_data_emb.sin()
+    input_data_cos = input_data_emb.cos()
+    input_data_emb = torch.cat([input_data, input_data_sin, input_data_cos], -1)
+    return input_data_emb
+
+
+class _Deformation(nn.Module):
     def __init__(
-        self, D=8, W=256, input_ch=27, input_ch_time=9, grid_pe=0, skips=[], args=None
+        self,
+        args: "Config",
+        D=8,
+        W=256,
+        input_ch=27,
+        input_ch_time=9,
+        grid_pe=0,
+        skips=[],
     ):
-        super(Deformation, self).__init__()
+        super(_Deformation, self).__init__()
         self.D = D
         self.W = W
         self.input_ch = input_ch
@@ -27,7 +57,13 @@ class Deformation(nn.Module):
         self.skips = skips
         self.grid_pe = grid_pe
         self.no_grid = args.no_grid
-        self.grid = HexPlaneField(args.bounds, args.kplanes_config, args.multires)
+        kplanes_config = {
+            "grid_dimensions": args.grid_dimensions,
+            "input_coordinate_dim": args.input_coordinate_dim,
+            "output_coordinate_dim": args.output_coordinate_dim,
+            "resolution": args.resolution,
+        }
+        self.grid = HexPlaneField(args.bounds, kplanes_config, args.multires)
         # breakpoint()
         self.args = args
         # self.args.empty_voxel=True
@@ -210,3 +246,86 @@ class Deformation(nn.Module):
             if "grid" in name:
                 parameter_list.append(param)
         return parameter_list
+
+
+class Deformation(nn.Module):
+    def __init__(self, args: "Config"):
+        super(Deformation, self).__init__()
+        net_width = args.net_width
+        timebase_pe = args.timebase_pe
+        defor_depth = args.defor_depth
+        posbase_pe = args.posebase_pe
+        scale_rotation_pe = args.scale_rotation_pe
+        opacity_pe = args.opacity_pe
+        timenet_width = args.timenet_width
+        timenet_output = args.timenet_output
+        grid_pe = args.grid_pe
+        times_ch = 2 * timebase_pe + 1
+        self.timenet = nn.Sequential(
+            nn.Linear(times_ch, timenet_width),
+            nn.ReLU(),
+            nn.Linear(timenet_width, timenet_output),
+        )
+        self.deformation_net = _Deformation(
+            args=args,
+            W=net_width,
+            D=defor_depth,
+            input_ch=(3) + (3 * (posbase_pe)) * 2,
+            grid_pe=grid_pe,
+            input_ch_time=timenet_output,
+        )
+        self.register_buffer(
+            "time_poc", torch.FloatTensor([(2**i) for i in range(timebase_pe)])
+        )
+        self.register_buffer(
+            "pos_poc", torch.FloatTensor([(2**i) for i in range(posbase_pe)])
+        )
+        self.register_buffer(
+            "rotation_scaling_poc",
+            torch.FloatTensor([(2**i) for i in range(scale_rotation_pe)]),
+        )
+        self.register_buffer(
+            "opacity_poc", torch.FloatTensor([(2**i) for i in range(opacity_pe)])
+        )
+        self.apply(initialize_weights)
+        # print(self)
+
+    def forward(
+        self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None
+    ):
+        return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel)
+
+    @property
+    def get_aabb(self):
+
+        return self.deformation_net.get_aabb
+
+    @property
+    def get_empty_ratio(self):
+        return self.deformation_net.get_empty_ratio
+
+    def forward_static(self, points):
+        points = self.deformation_net(points)
+        return points
+
+    def forward_dynamic(
+        self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None
+    ):
+        # times_emb = poc_fre(times_sel, self.time_poc)
+        point_emb = poc_fre(point, self.pos_poc)
+        scales_emb = poc_fre(scales, self.rotation_scaling_poc)
+        rotations_emb = poc_fre(rotations, self.rotation_scaling_poc)
+        # time_emb = poc_fre(times_sel, self.time_poc)
+        # times_feature = self.timenet(time_emb)
+        means3D, scales, rotations, opacity, shs = self.deformation_net(
+            point_emb, scales_emb, rotations_emb, opacity, shs, None, times_sel
+        )
+        return means3D, scales, rotations, opacity, shs
+
+    def get_mlp_parameters(self):
+        return self.deformation_net.get_mlp_parameters() + list(
+            self.timenet.parameters()
+        )
+
+    def get_grid_parameters(self):
+        return self.deformation_net.get_grid_parameters()
