@@ -11,7 +11,7 @@ import torch.multiprocessing as mp
 
 @dataclass
 class Config:
-    data_dir: str = "data/360_v2/garden"
+    data_dir: str
     data_factor: int = 4
     test_every: int = 8
     depth_loss: bool = False
