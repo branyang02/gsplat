@@ -288,7 +288,6 @@ class Deformation(nn.Module):
             "opacity_poc", torch.FloatTensor([(2**i) for i in range(opacity_pe)])
         )
         self.apply(initialize_weights)
-        # print(self)
 
     def forward(
         self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None
