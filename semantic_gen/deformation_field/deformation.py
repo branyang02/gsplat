@@ -292,6 +292,7 @@ class Deformation(nn.Module):
     def forward(
         self, point, scales=None, rotations=None, opacity=None, shs=None, times_sel=None
     ):
+        print("Deformation Forward")
         return self.forward_dynamic(point, scales, rotations, opacity, shs, times_sel)
 
     @property

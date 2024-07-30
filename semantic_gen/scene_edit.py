@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import json
 import math
 import os
+import shutil
 import time
 from typing import Dict, List, Literal, Tuple
 
@@ -173,17 +174,24 @@ class Runner:
         os.makedirs(self.render_dir, exist_ok=True)
 
         # Tensorboard
-        self.writer = SummaryWriter(log_dir=f"{cfg.result_dir}/tb")
+        tb_log_dir = f"{cfg.result_dir}/tb"
+        if os.path.exists(tb_log_dir):
+            shutil.rmtree(tb_log_dir)
+        self.writer = SummaryWriter(log_dir=tb_log_dir)
 
         # load deformation field
         self.deformation = Deformation(cfg).to(self.device)
         print(self.deformation)
         # load 3DGS scene from ckpt
-        self.splats = ckpt["splats"]
+        self.splats = torch.nn.ParameterDict(ckpt["splats"])
         for key, value in self.splats.items():
             self.splats[key].requires_grad = True
         # load pretrained SAM module
         self.sam_module, self.sh_degree = self._get_sam_module(ckpt["sam_module"])
+
+        xyz_max = self.splats["means3d"].max(dim=0).values.detach().cpu().numpy()
+        xyz_min = self.splats["means3d"].min(dim=0).values.detach().cpu().numpy()
+        self.deformation.deformation_net.set_aabb(xyz_min, xyz_max)
 
         """In this temporary implementation, we assume we have the gaol scene"""
         self.parser = Parser(
@@ -582,15 +590,10 @@ class Runner:
         )
 
         # Copied from 4DGS
-        scales_final = torch.exp(scales_final)
-        quats_final = F.normalize(quats_final)
-        opacity_final = torch.sigmoid(opacity_final)
-
-        print("means3D_final", means3D_final.shape)
-        print("scales_final", scales_final.shape)
-        print("rotations_final", quats_final.shape)
-        print("opacity_final", opacity_final.shape)
-        print("shs_final", shs_final.shape)
+        scales = torch.exp(scales_final)
+        quats = F.normalize(quats_final)
+        opacities = torch.sigmoid(opacity_final).squeeze(-1)
+        means = means3D_final
 
         rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
         render_colors, render_alphas, info = rasterization(
@@ -848,7 +851,7 @@ class Runner:
                 Ks=Ks,
                 width=width,
                 height=height,
-                sh_degree=cfg.sh_degree,
+                sh_degree=self.sh_degree,
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
             )  # [1, H, W, 3]
@@ -932,7 +935,7 @@ class Runner:
                 Ks=K[None],
                 width=width,
                 height=height,
-                sh_degree=cfg.sh_degree,
+                sh_degree=self.sh_degree,
                 near_plane=cfg.near_plane,
                 far_plane=cfg.far_plane,
                 render_mode="RGB+ED",
@@ -973,7 +976,7 @@ class Runner:
             Ks=K[None],
             width=W,
             height=H,
-            sh_degree=self.cfg.sh_degree,  # active all SH degrees
+            sh_degree=self.sh_degree,  # active all SH degrees
             radius_clip=3.0,  # skip GSs that have small image radius (in gt_colors)
             **kwargs,
         )  # [1, H, W, 3]
