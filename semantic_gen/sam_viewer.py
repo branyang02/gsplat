@@ -25,6 +25,9 @@ class Config:
     backend: Literal["gsplat", "gsplat_legacy", "inria"] = "gsplat"
     device: Literal["cpu", "cuda"] = "cuda"
 
+    # Enable SAM optimization.
+    sam_opt: bool = True
+
 
 class Renderer:
     def __init__(
@@ -33,9 +36,10 @@ class Renderer:
         cfg: Config,
     ):
         self.cfg = cfg
-        self.sam_module, self.sh_degree = self._get_sam_module(
-            ckpt["sam_module"]
-        )  # TODO: check sh_degree logic
+        if cfg.sam_opt:
+            self.sam_module, self.sh_degree = self._get_sam_module(
+                ckpt["sam_module"]
+            )  # TODO: check sh_degree logic
         self.splats = ckpt["splats"]
         self.ori_splats = ckpt["splats"].copy()
 
@@ -101,17 +105,24 @@ class Renderer:
         image_ids = kwargs.pop("image_ids", None)
 
         # get colors from sam_module
-        colors, features = self.sam_module(
-            features=self.splats["features"],
-            embed_ids=image_ids,
-            dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
-            sh_degree=self.sh_degree,
-        )
-        colors = colors + self.splats["colors"]
-        colors = torch.sigmoid(colors)
+        if self.cfg.sam_opt:
+            colors, features = self.sam_module(
+                features=self.splats["features"],
+                embed_ids=image_ids,
+                dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
+                sh_degree=self.sh_degree,
+            )
+            colors = colors + self.splats["colors"]
+            colors = torch.sigmoid(colors)
 
-        features = features + self.splats["features"]
-        colors_with_features = torch.cat([colors, features], dim=-1)
+            features = features + self.splats["features"]
+            colors_with_features = torch.cat([colors, features], dim=-1)
+        else:
+            colors_with_features = torch.cat(
+                [self.splats["colors"], self.splats["features"]], -1
+            ).unsqueeze(
+                0
+            )  # [1, N, 3 + feature_dim]
 
         render_colors, render_alphas, info = rasterization(
             means=means,

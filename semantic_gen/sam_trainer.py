@@ -33,17 +33,17 @@ from gsplat.rendering import rasterization
 
 @dataclass
 class Config:
+    # Path to the Mip-NeRF 360 dataset
+    data_dir: str
+    # Directory to save results
+    result_dir: str
+
     # Disable viewer
     disable_viewer: bool = False
     # Path to the .pt file. If provide, it will skip training and render a video
     ckpt: Optional[str] = None
-
-    # Path to the Mip-NeRF 360 dataset
-    data_dir: str = "data/360_v2/garden"
     # Downsample factor for the dataset
     data_factor: int = 4
-    # Directory to save results
-    result_dir: str = "results/garden"
     # Every N images there is a test image
     test_every: int = 8
     # Random crop size for training  (experimental)
@@ -63,11 +63,11 @@ class Config:
     max_steps: int = 30_000
     # Steps to evaluate the model
     eval_steps: List[int] = field(
-        default_factory=lambda: [3_000, 7_000, 14_000, 30_000]
+        default_factory=lambda: [1_000, 3_000, 7_000, 11_000, 14_000, 30_000]
     )
     # Steps to save the model
     save_steps: List[int] = field(
-        default_factory=lambda: [3_000, 7_000, 14_000, 30_000]
+        default_factory=lambda: [1_000, 3_000, 7_000, 11_000, 14_000, 30_000]
     )
 
     # Degree of spherical harmonics
@@ -123,6 +123,8 @@ class Config:
     # Add noise to camera extrinsics. This is only to test the camera pose optimization.
     pose_noise: float = 0.0
 
+    # Enable SAM optimization.
+    sam_opt: bool = True
     # Learning rate for SAM optimization
     sam_opt_lr: float = 1e-3
     # Regularization for SAM optimization as weight decay
@@ -268,35 +270,36 @@ class Runner:
             self.pose_perturb.random_init(cfg.pose_noise)
 
         self.app_optimizers = []
-        self.sam_module = SAMOptModule(
-            len(self.trainset),
-            self.feature_dim,
-            self.feature_dim // 2,
-            cfg.sh_degree,
-            output_dim=self.feature_dim,  ##### added output_dim
-        ).to(self.device)
-        print(self.sam_module)
-        # initialize the last layer to be zero so that the initial output is zero.
-        torch.nn.init.zeros_(self.sam_module.color_head[-1].weight)
-        torch.nn.init.zeros_(self.sam_module.color_head[-1].bias)
-        ##### initialize the last layer of feature_head to be zero
-        torch.nn.init.zeros_(self.sam_module.feature_head[-1].weight)
-        torch.nn.init.zeros_(self.sam_module.feature_head[-1].bias)
-        self.app_optimizers = [
-            torch.optim.Adam(
-                self.sam_module.embeds.parameters(),
-                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
-                weight_decay=cfg.sam_opt_reg,
-            ),
-            torch.optim.Adam(
-                self.sam_module.color_head.parameters(),
-                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
-            ),
-            torch.optim.Adam(
-                self.sam_module.feature_head.parameters(),
-                lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
-            ),  ##### added optimizer for feature_head
-        ]
+        if cfg.sam_opt:
+            self.sam_module = SAMOptModule(
+                len(self.trainset),
+                self.feature_dim,
+                self.feature_dim // 2,
+                cfg.sh_degree,
+                output_dim=self.feature_dim,  ##### added output_dim
+            ).to(self.device)
+            print(self.sam_module)
+            # initialize the last layer to be zero so that the initial output is zero.
+            torch.nn.init.zeros_(self.sam_module.color_head[-1].weight)
+            torch.nn.init.zeros_(self.sam_module.color_head[-1].bias)
+            ##### initialize the last layer of feature_head to be zero
+            torch.nn.init.zeros_(self.sam_module.feature_head[-1].weight)
+            torch.nn.init.zeros_(self.sam_module.feature_head[-1].bias)
+            self.app_optimizers = [
+                torch.optim.Adam(
+                    self.sam_module.embeds.parameters(),
+                    lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size) * 10.0,
+                    weight_decay=cfg.sam_opt_reg,
+                ),
+                torch.optim.Adam(
+                    self.sam_module.color_head.parameters(),
+                    lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
+                ),
+                torch.optim.Adam(
+                    self.sam_module.feature_head.parameters(),
+                    lr=cfg.sam_opt_lr * math.sqrt(cfg.batch_size),
+                ),  ##### added optimizer for feature_head
+            ]
 
         # Losses & Metrics.
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
@@ -339,18 +342,27 @@ class Runner:
         opacities = torch.sigmoid(self.splats["opacities"])  # [N,]
 
         image_ids = kwargs.pop("image_ids", None)
-        colors, features = self.sam_module(
-            features=self.splats["features"],
-            embed_ids=image_ids,
-            dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
-            sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
-        )
-        colors = colors + self.splats["colors"]
-        colors = torch.sigmoid(colors)
-        features = features + self.splats["features"]
-        colors_with_features = torch.cat(
-            [colors, features], -1
-        )  # [(C,), N, 3 + feature_dim]
+        if self.cfg.sam_opt:
+            colors, features = self.sam_module(
+                features=self.splats["features"],
+                embed_ids=image_ids,
+                dirs=means[None, :, :] - camtoworlds[:, None, :3, 3],
+                sh_degree=kwargs.pop("sh_degree", self.cfg.sh_degree),
+            )
+            colors = colors + self.splats["colors"]
+            colors = torch.sigmoid(colors)
+            features = features + self.splats["features"]
+            colors_with_features = torch.cat(
+                [colors, features], -1
+            )  # [(C,), N, 3 + feature_dim]
+
+        else:
+            colors_with_features = torch.cat(
+                [self.splats["colors"], self.splats["features"]], -1
+            ).unsqueeze(
+                0
+            )  # [1, N, 3 + feature_dim]
+            kwargs.pop("sh_degree", None)
 
         rasterize_mode = "antialiased" if self.cfg.antialiased else "classic"
         render_colors, render_alphas, info = rasterization(
@@ -652,7 +664,9 @@ class Runner:
                     {
                         "step": step,
                         "splats": self.splats.state_dict(),
-                        "sam_module": self.sam_module.state_dict(),  ##### Save state of self.sam_module
+                        "sam_module": (
+                            self.sam_module.state_dict() if cfg.sam_opt else None
+                        ),
                     },
                     f"{self.ckpt_dir}/ckpt_{step}.pt",
                 )
